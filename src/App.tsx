@@ -13,6 +13,7 @@ import { NostrLoginProvider } from '@nostrify/react/login';
 import { AppProvider } from '@/components/AppProvider';
 import { NWCProvider } from '@/contexts/NWCContext';
 import { AppConfig } from '@/contexts/AppContext';
+import { SchedulerProvider } from '@/contexts/SchedulerContext';
 import AppRouter from './AppRouter';
 
 const head = createHead({
@@ -52,12 +53,14 @@ export function App() {
             <NostrProvider>
               <NostrSync />
               <NWCProvider>
-                <TooltipProvider>
-                  <Toaster />
-                  <Suspense>
-                    <AppRouter />
-                  </Suspense>
-                </TooltipProvider>
+                <SchedulerProvider>
+                  <TooltipProvider>
+                    <Toaster />
+                    <Suspense>
+                      <AppRouter />
+                    </Suspense>
+                  </TooltipProvider>
+                </SchedulerProvider>
               </NWCProvider>
             </NostrProvider>
           </NostrLoginProvider>
