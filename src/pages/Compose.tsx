@@ -194,6 +194,26 @@ export default function Compose() {
     navigate('/');
   }, [post, scheduleDate, scheduleTime, user, updatePost, toast, navigate]);
 
+  // Quick schedule — offset in seconds from now
+  const handleQuickSchedule = useCallback((offsetSeconds: number) => {
+    const scheduledAt = Math.floor(Date.now() / 1000) + offsetSeconds;
+    const updated: SchedulerPost = {
+      ...post,
+      status: 'scheduled',
+      scheduledAt,
+      authorPubkey: user?.pubkey ?? post.authorPubkey,
+    };
+    updatePost(updated);
+    setPost(updated);
+    setPersisted(true);
+    const label = offsetSeconds < 60 ? `${offsetSeconds}s` : `${Math.round(offsetSeconds / 60)} min`;
+    toast({
+      title: `Scheduled in ${label}`,
+      description: `Will auto-publish at ${format(new Date(scheduledAt * 1000), 'h:mm:ss a')}. Keep this tab open!`,
+    });
+    navigate('/');
+  }, [post, user, updatePost, toast, navigate]);
+
   // Publish now
   const handlePublishNow = useCallback(async () => {
     if (!user) return;
@@ -710,6 +730,24 @@ export default function Compose() {
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
               <div className="p-3 space-y-3">
+                {/* Quick schedule buttons for testing */}
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-muted-foreground">Quick schedule</p>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <Button size="sm" variant="secondary" className="text-xs h-8" onClick={() => handleQuickSchedule(30)}>
+                      30 sec
+                    </Button>
+                    <Button size="sm" variant="secondary" className="text-xs h-8" onClick={() => handleQuickSchedule(60)}>
+                      1 min
+                    </Button>
+                    <Button size="sm" variant="secondary" className="text-xs h-8" onClick={() => handleQuickSchedule(120)}>
+                      2 min
+                    </Button>
+                  </div>
+                </div>
+
+                <Separator />
+
                 <Calendar
                   mode="single"
                   selected={scheduleDate}
