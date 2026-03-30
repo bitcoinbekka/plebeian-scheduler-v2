@@ -9,8 +9,7 @@ import type { SchedulerPost } from './types';
  *   posts.filter(p =>
  *     p.status === 'scheduled' &&
  *     p.scheduledAt !== null &&
- *     p.scheduledAt <= now &&
- *     !p.useDvm
+ *     p.scheduledAt <= now
  *   )
  *
  * This is the exact code path that determines which posts get auto-published
@@ -20,8 +19,7 @@ function getDuePosts(posts: SchedulerPost[], now: number): SchedulerPost[] {
   return posts.filter(
     p => p.status === 'scheduled' &&
       p.scheduledAt !== null &&
-      p.scheduledAt <= now &&
-      !p.useDvm
+      p.scheduledAt <= now
   );
 }
 
@@ -92,38 +90,36 @@ describe('Scheduler publish — due post detection', () => {
     expect(due.length).toBe(0);
   });
 
-  it('skips DVM-delegated posts (useDvm = true)', () => {
+  it('skips failed posts', () => {
     const post: SchedulerPost = {
       ...createNewPost('pk'),
-      status: 'scheduled',
+      status: 'failed',
       scheduledAt: now - 60,
-      useDvm: true,
-      dvmRelays: ['wss://relay.damus.io'],
+      errorMessage: 'something broke',
     };
     const due = getDuePosts([post], now);
     expect(due.length).toBe(0);
   });
 
-  it('handles mixed batch: returns only due non-DVM scheduled posts', () => {
+  it('handles mixed batch: returns only due scheduled posts', () => {
     const posts: SchedulerPost[] = [
-      // Should be published: due, scheduled, not DVM
+      // Should be published: due, scheduled
       { ...createNewPost('pk'), status: 'scheduled', scheduledAt: now - 120 },
-      // Should be published: due, scheduled, not DVM
+      // Should be published: due, scheduled
       { ...createNewPost('pk'), status: 'scheduled', scheduledAt: now },
       // Should NOT: future
       { ...createNewPost('pk'), status: 'scheduled', scheduledAt: now + 600 },
-      // Should NOT: DVM
-      { ...createNewPost('pk'), status: 'scheduled', scheduledAt: now - 60, useDvm: true, dvmRelays: [] },
       // Should NOT: draft
       { ...createNewPost('pk'), status: 'draft', scheduledAt: null },
       // Should NOT: already published
       { ...createNewPost('pk'), status: 'published', scheduledAt: now - 300, publishedAt: now - 200, publishedEventId: 'x' },
+      // Should NOT: failed
+      { ...createNewPost('pk'), status: 'failed', scheduledAt: now - 60, errorMessage: 'oops' },
     ];
 
     const due = getDuePosts(posts, now);
     expect(due.length).toBe(2);
     expect(due.every(p => p.status === 'scheduled')).toBe(true);
-    expect(due.every(p => !p.useDvm)).toBe(true);
     expect(due.every(p => p.scheduledAt !== null && p.scheduledAt <= now)).toBe(true);
   });
 });

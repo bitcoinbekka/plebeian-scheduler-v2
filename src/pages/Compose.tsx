@@ -70,9 +70,7 @@ export default function Compose() {
 
   const [post, setPost] = useState<SchedulerPost>(() => {
     if (existingPost) return existingPost;
-    const p = createNewPost(user?.pubkey ?? '');
-    p.useDvm = true;
-    return p;
+    return createNewPost(user?.pubkey ?? '');
   });
 
   const [persisted, setPersisted] = useState(!!editId);
@@ -120,7 +118,7 @@ export default function Compose() {
       ...post,
       status: 'scheduled',
       scheduledAt,
-      useDvm: true,
+      useDvm: false,
       authorPubkey: user?.pubkey ?? post.authorPubkey,
     };
     updatePost(updated);
@@ -129,7 +127,7 @@ export default function Compose() {
     setShowScheduler(false);
     toast({
       title: 'Post scheduled!',
-      description: `Your promo note will be published on ${format(scheduledDate, 'MMM d, yyyy')} at ${format(scheduledDate, 'h:mm a')}.`,
+      description: `Your promo note will be published on ${format(scheduledDate, 'MMM d, yyyy')} at ${format(scheduledDate, 'h:mm a')}. Keep this tab open.`,
     });
     navigate('/');
   }, [post, scheduleDate, scheduleTime, user, updatePost, toast, navigate]);
@@ -141,7 +139,7 @@ export default function Compose() {
       ...post,
       status: 'scheduled',
       scheduledAt,
-      useDvm: true,
+      useDvm: false,
       authorPubkey: user?.pubkey ?? post.authorPubkey,
     };
     updatePost(updated);
@@ -150,7 +148,7 @@ export default function Compose() {
     setShowScheduler(false);
     toast({
       title: `Scheduled in ${label}`,
-      description: `Your promo note will be published at ${format(new Date(scheduledAt * 1000), 'h:mm a')}.`,
+      description: `Your promo note will be published at ${format(new Date(scheduledAt * 1000), 'h:mm a')}. Keep this tab open.`,
     });
     navigate('/');
   }, [post, user, updatePost, toast, navigate]);

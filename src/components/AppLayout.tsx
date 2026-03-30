@@ -130,6 +130,9 @@ export function AppLayout({ children }: AppLayoutProps) {
                 {stats.scheduled} scheduled
               </span>
             </div>
+            <p className="text-[10px] text-muted-foreground mt-1.5 leading-tight">
+              Keep this tab open to publish on time
+            </p>
           </div>
         )}
 
