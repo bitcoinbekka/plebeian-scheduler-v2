@@ -53,7 +53,7 @@ function AuthorBadge({ pubkey }: { pubkey: string }) {
   );
 }
 
-/** Individual listing card */
+/** Compact horizontal listing row */
 function ListingCard({
   listing,
   onImport,
@@ -64,110 +64,83 @@ function ListingCard({
   showAuthor?: boolean;
 }) {
   return (
-    <div
+    <button
+      type="button"
+      onClick={onImport}
       className={cn(
-        'group relative rounded-xl border bg-card overflow-hidden transition-all duration-200',
-        'hover:shadow-lg hover:border-primary/30 hover:-translate-y-0.5'
+        'group flex items-center gap-3 w-full text-left p-2 rounded-lg border transition-all duration-150',
+        'hover:border-primary/40 hover:bg-primary/5 hover:shadow-sm',
+        'focus:outline-none focus:ring-2 focus:ring-primary/30'
       )}
     >
-      {/* Image */}
+      {/* Thumbnail */}
       {listing.images.length > 0 ? (
-        <div className="relative aspect-[4/3] overflow-hidden bg-muted">
+        <div className="relative w-12 h-12 rounded-md overflow-hidden bg-muted shrink-0">
           <img
             src={listing.images[0].url}
             alt={listing.title}
-            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+            className="w-full h-full object-cover"
           />
           {listing.images.length > 1 && (
-            <Badge
-              variant="secondary"
-              className="absolute bottom-2 right-2 text-[10px] gap-1 bg-black/60 text-white border-0 backdrop-blur-sm"
-            >
-              <ImageIcon className="w-2.5 h-2.5" />
-              {listing.images.length}
-            </Badge>
-          )}
-          {listing.price && (
-            <Badge className="absolute top-2 left-2 font-mono text-xs shadow-lg">
-              {listing.price} {listing.currency}
-            </Badge>
+            <span className="absolute bottom-0 right-0 bg-black/60 text-white text-[9px] px-1 rounded-tl-sm">
+              +{listing.images.length - 1}
+            </span>
           )}
         </div>
       ) : (
-        <div className="aspect-[4/3] bg-gradient-to-br from-muted to-muted/50 flex items-center justify-center">
-          <ShoppingBag className="w-8 h-8 text-muted-foreground/25" />
-          {listing.price && (
-            <Badge className="absolute top-2 left-2 font-mono text-xs">
-              {listing.price} {listing.currency}
-            </Badge>
-          )}
+        <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center shrink-0">
+          <ShoppingBag className="w-5 h-5 text-muted-foreground/30" />
         </div>
       )}
 
       {/* Info */}
-      <div className="p-3 space-y-2">
-        <h3 className="text-sm font-semibold leading-tight line-clamp-2">
-          {listing.title || 'Untitled Listing'}
-        </h3>
-
-        {listing.summary && (
-          <p className="text-xs text-muted-foreground line-clamp-2">{listing.summary}</p>
-        )}
-
-        <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-medium truncate">
+            {listing.title || 'Untitled Listing'}
+          </h3>
+          {listing.price && (
+            <Badge variant="secondary" className="shrink-0 text-[10px] font-mono h-5 px-1.5">
+              {listing.price} {listing.currency}
+            </Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-2 mt-0.5">
+          {showAuthor && <AuthorBadge pubkey={listing.event.pubkey} />}
           {listing.location && (
-            <span className="text-[11px] text-muted-foreground flex items-center gap-0.5">
-              <MapPin className="w-3 h-3" />
+            <span className="text-[11px] text-muted-foreground flex items-center gap-0.5 truncate">
+              <MapPin className="w-2.5 h-2.5 shrink-0" />
               {listing.location}
             </span>
           )}
           {listing.categories.length > 0 && (
-            <span className="text-[11px] text-muted-foreground flex items-center gap-0.5">
-              <Tag className="w-3 h-3" />
+            <span className="text-[11px] text-muted-foreground flex items-center gap-0.5 truncate">
+              <Tag className="w-2.5 h-2.5 shrink-0" />
               {listing.categories.slice(0, 2).join(', ')}
             </span>
           )}
-        </div>
-
-        <div className="flex items-center justify-between pt-1">
-          <div className="flex items-center gap-2">
-            {showAuthor && <AuthorBadge pubkey={listing.event.pubkey} />}
-            {!showAuthor && (
-              <span className="text-[11px] text-muted-foreground flex items-center gap-0.5">
-                <Clock className="w-3 h-3" />
-                {formatDistanceToNow(new Date(listing.event.created_at * 1000), { addSuffix: true })}
-              </span>
-            )}
-          </div>
-
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 text-xs gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
-            onClick={(e) => {
-              e.stopPropagation();
-              onImport();
-            }}
-          >
-            <Download className="w-3 h-3" />
-            Import
-          </Button>
+          <span className="text-[11px] text-muted-foreground flex items-center gap-0.5 shrink-0 ml-auto">
+            <Clock className="w-2.5 h-2.5" />
+            {formatDistanceToNow(new Date(listing.event.created_at * 1000), { addSuffix: true })}
+          </span>
         </div>
       </div>
-    </div>
+
+      {/* Import indicator */}
+      <Download className="w-4 h-4 text-muted-foreground/30 group-hover:text-primary shrink-0 transition-colors" />
+    </button>
   );
 }
 
-/** Loading skeleton grid */
+/** Loading skeleton rows */
 function ListingSkeletons() {
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-      {[1, 2, 3, 4, 5, 6].map(i => (
-        <div key={i} className="rounded-xl border overflow-hidden">
-          <Skeleton className="aspect-[4/3] w-full" />
-          <div className="p-3 space-y-2">
-            <Skeleton className="h-4 w-3/4" />
-            <Skeleton className="h-3 w-full" />
+    <div className="space-y-2">
+      {[1, 2, 3, 4].map(i => (
+        <div key={i} className="flex items-center gap-3 p-2 rounded-lg border">
+          <Skeleton className="w-12 h-12 rounded-md shrink-0" />
+          <div className="flex-1 space-y-1.5">
+            <Skeleton className="h-4 w-2/3" />
             <Skeleton className="h-3 w-1/2" />
           </div>
         </div>
@@ -261,33 +234,33 @@ export function ListingBrowser({ onImport }: ListingBrowserProps) {
       </CardHeader>
 
       {isOpen && (
-        <CardContent className="pt-4 space-y-4">
+        <CardContent className="pt-3 space-y-3">
           {/* Mode toggle */}
-          <div className="flex items-center gap-1 p-1 bg-muted rounded-lg">
+          <div className="flex items-center gap-0.5 p-0.5 bg-muted rounded-md">
             <button
               type="button"
               onClick={() => setMode('mine')}
               className={cn(
-                'flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200',
+                'flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-all duration-200',
                 mode === 'mine'
                   ? 'bg-background text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
               )}
             >
-              <User className="w-3.5 h-3.5" />
+              <User className="w-3 h-3" />
               My Listings
             </button>
             <button
               type="button"
               onClick={() => setMode('all')}
               className={cn(
-                'flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200',
+                'flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-all duration-200',
                 mode === 'all'
                   ? 'bg-background text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
               )}
             >
-              <Globe className="w-3.5 h-3.5" />
+              <Globe className="w-3 h-3" />
               All Listings
             </button>
           </div>
@@ -337,12 +310,12 @@ export function ListingBrowser({ onImport }: ListingBrowserProps) {
           )}
 
           {/* Results */}
-          <ScrollArea className="max-h-[480px]">
+          <ScrollArea className="max-h-[280px] -mx-1 px-1">
             {isLoading ? (
               <ListingSkeletons />
             ) : currentListings.length === 0 ? (
-              <div className="py-10 text-center">
-                <ShoppingBag className="w-10 h-10 mx-auto text-muted-foreground/20 mb-3" />
+              <div className="py-8 text-center">
+                <ShoppingBag className="w-8 h-8 mx-auto text-muted-foreground/20 mb-2" />
                 <p className="text-sm text-muted-foreground">
                   {mode === 'mine'
                     ? allSearchInput ? 'No listings match your filter' : 'No published listings found'
@@ -356,7 +329,7 @@ export function ListingBrowser({ onImport }: ListingBrowserProps) {
                 )}
               </div>
             ) : (
-              <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="space-y-1.5">
                 {currentListings.map(listing => (
                   <ListingCard
                     key={listing.event.id}
