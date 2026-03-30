@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, type ReactNode } from 'react';
-import type { SchedulerPost, Queue, PostKind, PostStatus } from '@/lib/types';
+import type { SchedulerPost, Queue, PostStatus } from '@/lib/types';
 import { createNewPost } from '@/lib/types';
 import {
   loadPosts, savePosts,
@@ -18,7 +18,7 @@ interface SchedulerContextValue {
   posts: SchedulerPost[];
   queues: Queue[];
   stats: Stats;
-  createPost: (kind: PostKind, authorPubkey: string) => SchedulerPost;
+  createPost: (authorPubkey: string) => SchedulerPost;
   updatePost: (post: SchedulerPost) => void;
   removePost: (id: string) => void;
   getPost: (id: string) => SchedulerPost | undefined;
@@ -62,8 +62,8 @@ export function SchedulerProvider({ children }: { children: ReactNode }) {
     setQueues(loadQueues());
   }, []);
 
-  const createPost = useCallback((kind: PostKind, authorPubkey: string): SchedulerPost => {
-    const post = createNewPost(kind, authorPubkey);
+  const createPost = useCallback((authorPubkey: string): SchedulerPost => {
+    const post = createNewPost(authorPubkey);
     setPosts(prev => [...prev, post]);
     return post;
   }, []);
@@ -145,7 +145,6 @@ export function SchedulerProvider({ children }: { children: ReactNode }) {
 
   const removeQueueFn = useCallback((name: string) => {
     setQueues(prev => prev.filter(q => q.name !== name));
-    // Unassign posts from removed queue
     setPosts(prev => prev.map(p => {
       if (p.queueName === name) {
         return { ...p, queueName: '', queuePosition: 0 };

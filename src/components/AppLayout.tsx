@@ -176,7 +176,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               <div className="space-y-2">
                 <h2 className="font-display text-2xl font-bold">Welcome to Plebeian Scheduler</h2>
                 <p className="text-muted-foreground max-w-md">
-                  Schedule your NIP-99 marketplace listings, notes, and articles.
+                  Import your Plebeian Market listings, craft promotional notes, and schedule them.
                   Sign in with your Nostr identity to get started.
                 </p>
               </div>

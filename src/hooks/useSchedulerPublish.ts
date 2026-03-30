@@ -32,8 +32,7 @@ export function useSchedulerPublish() {
   const publishingRef = useRef(new Set<string>());
 
   const getLabel = (post: SchedulerPost) => {
-    if (post.kind === 'listing') return post.listingFields?.title || 'Untitled Listing';
-    if (post.kind === 'article') return post.articleFields?.title || 'Untitled Article';
+    if (post.importedListing?.title) return post.importedListing.title;
     return post.content.slice(0, 40) || 'Note';
   };
 
@@ -46,7 +45,7 @@ export function useSchedulerPublish() {
     console.log(`[Scheduler] Direct publishing "${label}" (post ${post.id})...`);
 
     try {
-      const eventData = buildEvent(post, false);
+      const eventData = buildEvent(post);
       const signedEvent = await user.signer.signEvent({
         kind: eventData.kind,
         content: eventData.content,
@@ -85,7 +84,7 @@ export function useSchedulerPublish() {
     console.log(`[Scheduler] Submitting DVM job for "${label}" (post ${post.id})...`);
 
     try {
-      const eventData = buildEvent(post, false);
+      const eventData = buildEvent(post);
       const dvmRequest = buildDvmPublishRequest(post, JSON.stringify(eventData));
 
       const signedDvmRequest = await user.signer.signEvent({

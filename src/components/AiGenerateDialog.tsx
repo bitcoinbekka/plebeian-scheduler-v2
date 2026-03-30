@@ -7,9 +7,6 @@ import {
   ArrowRight,
   AlertCircle,
   Wand2,
-  ShoppingBag,
-  MessageSquare,
-  BookOpen,
   X,
 } from 'lucide-react';
 import {
@@ -22,15 +19,12 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { useDvmGenerate } from '@/hooks/useDvmGenerate';
 import { cn } from '@/lib/utils';
-import type { PostKind } from '@/lib/types';
 
 interface AiGenerateDialogProps {
-  postKind: PostKind;
   currentContent: string;
   listingTitle?: string;
   listingContext?: string;
@@ -38,59 +32,26 @@ interface AiGenerateDialogProps {
   children?: React.ReactNode;
 }
 
-const QUICK_PROMPTS: Record<PostKind, { label: string; prompt: string }[]> = {
-  listing: [
-    {
-      label: 'Product description',
-      prompt: 'Write a compelling product description for a marketplace listing. Make it engaging, highlight key features and benefits. Keep it under 300 words.',
-    },
-    {
-      label: 'Sales pitch',
-      prompt: 'Write a persuasive sales pitch for this product. Focus on value proposition and urgency. Keep it concise and engaging.',
-    },
-    {
-      label: 'Improve description',
-      prompt: 'Improve and polish the following product description. Make it more professional, add relevant details, and optimize for marketplace search. Keep the same structure but enhance the writing quality.',
-    },
-  ],
-  note: [
-    {
-      label: 'Announcement',
-      prompt: 'Write a short, engaging social media announcement. Keep it under 280 characters, make it punchy and attention-grabbing.',
-    },
-    {
-      label: 'Product update',
-      prompt: 'Write a brief product update note for social media. Keep it casual, informative, and under 500 characters.',
-    },
-    {
-      label: 'Promotional post',
-      prompt: 'Write a promotional social media post. Include a call to action. Keep it brief and engaging.',
-    },
-  ],
-  article: [
-    {
-      label: 'Blog post outline',
-      prompt: 'Create a detailed blog post outline with sections, key points, and a compelling introduction. Use Markdown formatting.',
-    },
-    {
-      label: 'Product review',
-      prompt: 'Write a thorough product review article in Markdown. Include pros, cons, detailed analysis, and a verdict section.',
-    },
-    {
-      label: 'How-to guide',
-      prompt: 'Write a step-by-step how-to guide article in Markdown. Include clear instructions, tips, and a summary.',
-    },
-  ],
-};
-
-const KIND_CONTEXT: Record<PostKind, string> = {
-  listing: 'a Nostr marketplace listing (NIP-99)',
-  note: 'a short social media note on Nostr',
-  article: 'a long-form article on Nostr (NIP-23)',
-};
+const QUICK_PROMPTS = [
+  {
+    label: 'Promotional post',
+    prompt: 'Write a short, punchy promotional social media post for this product. Include a call to action. Keep it under 280 characters, engaging and fun. Add relevant emojis.',
+  },
+  {
+    label: 'Sales announcement',
+    prompt: 'Write a compelling sales announcement note. Highlight the value proposition and create urgency. Keep it concise — under 500 characters.',
+  },
+  {
+    label: 'Product spotlight',
+    prompt: 'Write a product spotlight post that highlights key features and benefits. Make it engaging and personal, as if a merchant is talking to their community. Under 400 characters.',
+  },
+  {
+    label: 'Improve my note',
+    prompt: 'Improve and polish the following promotional note. Make it more engaging, add relevant emojis, and optimize it for social media. Keep the same voice but enhance the writing quality.',
+  },
+];
 
 export function AiGenerateDialog({
-  postKind,
   currentContent,
   listingTitle,
   listingContext,
@@ -104,26 +65,23 @@ export function AiGenerateDialog({
 
   const { generate, cancel, isGenerating, error } = useDvmGenerate();
 
-  const KindIcon = postKind === 'listing' ? ShoppingBag
-    : postKind === 'article' ? BookOpen
-      : MessageSquare;
-
   const buildFullPrompt = useCallback((basePrompt: string) => {
-    let full = `You are writing content for ${KIND_CONTEXT[postKind]}.`;
+    let full = 'You are writing a promotional social media post (Nostr note) for a merchant selling products on a Bitcoin marketplace.';
 
     if (listingTitle) {
       full += `\n\nProduct/Item: "${listingTitle}"`;
     }
     if (listingContext) {
-      full += `\n\nAdditional context: ${listingContext}`;
+      full += `\n\nProduct details: ${listingContext}`;
     }
     if (currentContent.trim()) {
       full += `\n\nExisting content to work with:\n"""${currentContent.trim()}"""`;
     }
 
     full += `\n\nTask: ${basePrompt}`;
+    full += '\n\nImportant: Output ONLY the post text. No explanations, no quotes, no markdown headers.';
     return full;
-  }, [postKind, listingTitle, listingContext, currentContent]);
+  }, [listingTitle, listingContext, currentContent]);
 
   const handleGenerate = useCallback(async (basePrompt?: string) => {
     const promptText = basePrompt || prompt;
@@ -179,12 +137,8 @@ export function AiGenerateDialog({
             </div>
             AI Content Generation
           </DialogTitle>
-          <DialogDescription className="flex items-center gap-2">
-            <Badge variant="secondary" className="gap-1">
-              <KindIcon className="w-3 h-3" />
-              {postKind === 'listing' ? 'Listing' : postKind === 'article' ? 'Article' : 'Note'}
-            </Badge>
-            Powered by NIP-90 Data Vending Machines (kind 5050)
+          <DialogDescription>
+            Generate promotional content for your note. Powered by NIP-90 Data Vending Machines.
           </DialogDescription>
         </DialogHeader>
 
@@ -194,7 +148,7 @@ export function AiGenerateDialog({
             <div className="space-y-2">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Quick prompts</p>
               <div className="grid gap-2">
-                {QUICK_PROMPTS[postKind].map(qp => (
+                {QUICK_PROMPTS.map(qp => (
                   <button
                     key={qp.label}
                     type="button"
@@ -230,13 +184,7 @@ export function AiGenerateDialog({
             {result ? 'Your prompt' : 'Custom prompt'}
           </p>
           <Textarea
-            placeholder={
-              postKind === 'listing'
-                ? 'e.g., Write a detailed description for my vintage camera listing...'
-                : postKind === 'article'
-                  ? 'e.g., Write an article about Bitcoin privacy best practices...'
-                  : 'e.g., Write a catchy announcement about my new product...'
-            }
+            placeholder="e.g., Write a catchy promo post for my handmade soap listing..."
             value={prompt}
             onChange={e => setPrompt(e.target.value)}
             rows={result ? 2 : 3}
@@ -345,7 +293,7 @@ export function AiGenerateDialog({
                 className="w-full gap-2"
               >
                 <ArrowRight className="w-4 h-4" />
-                Insert into {postKind === 'listing' ? 'description' : 'content'}
+                Insert into note
               </Button>
             </div>
           </>

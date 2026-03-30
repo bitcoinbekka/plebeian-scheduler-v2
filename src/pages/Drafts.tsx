@@ -4,7 +4,6 @@ import {
   FileText,
   ShoppingBag,
   MessageSquare,
-  BookOpen,
   Trash2,
   PenSquare,
   CalendarClock,
@@ -27,29 +26,18 @@ import {
 import { useScheduler } from '@/contexts/SchedulerContext';
 import { useToast } from '@/hooks/useToast';
 import { formatDistanceToNow } from 'date-fns';
+import type { SchedulerPost } from '@/lib/types';
 
-const KIND_ICONS = {
-  note: MessageSquare,
-  listing: ShoppingBag,
-  article: BookOpen,
-};
-
-const KIND_LABELS = {
-  note: 'Note',
-  listing: 'Listing',
-  article: 'Article',
-};
-
-const KIND_COLORS = {
-  note: 'text-blue-500 bg-blue-500/10',
-  listing: 'text-primary bg-primary/10',
-  article: 'text-emerald-500 bg-emerald-500/10',
-};
+/** Get a human-friendly title for a promo note */
+function getPostTitle(post: SchedulerPost): string {
+  if (post.importedListing?.title) return post.importedListing.title;
+  return post.content.slice(0, 80) || 'Empty note';
+}
 
 export default function Drafts() {
   useSeoMeta({
     title: 'Drafts - Plebeian Scheduler',
-    description: 'Manage your draft posts and listings.',
+    description: 'Manage your draft promotional posts.',
   });
 
   const { posts, removePost } = useScheduler();
@@ -76,7 +64,7 @@ export default function Drafts() {
         <Link to="/compose">
           <Button className="gap-2">
             <PenSquare className="w-4 h-4" />
-            New Draft
+            New Note
           </Button>
         </Link>
       </div>
@@ -91,7 +79,7 @@ export default function Drafts() {
               <div>
                 <p className="font-medium">No drafts yet</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Start composing a post and save it as a draft to come back later.
+                  Start composing a promo note and save it as a draft to come back later.
                 </p>
               </div>
               <Link to="/compose">
@@ -106,26 +94,21 @@ export default function Drafts() {
       ) : (
         <div className="space-y-3">
           {drafts.map(post => {
-            const KindIcon = KIND_ICONS[post.kind];
-            const colorClass = KIND_COLORS[post.kind];
-            const title = post.kind === 'listing'
-              ? post.listingFields?.title || 'Untitled Listing'
-              : post.kind === 'article'
-                ? post.articleFields?.title || 'Untitled Article'
-                : null;
+            const hasListing = !!post.importedListing;
+            const title = getPostTitle(post);
             const preview = post.content.slice(0, 120) || 'No content';
 
             return (
               <Card key={post.id} className="hover:shadow-md transition-shadow duration-200 group">
                 <CardContent className="p-4">
                   <div className="flex items-start gap-4">
-                    <div className={`w-10 h-10 rounded-lg ${colorClass} flex items-center justify-center shrink-0`}>
-                      <KindIcon className="w-5 h-5" />
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${hasListing ? 'bg-primary/10 text-primary' : 'bg-blue-500/10 text-blue-500'}`}>
+                      {hasListing ? <ShoppingBag className="w-5 h-5" /> : <MessageSquare className="w-5 h-5" />}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          {title && (
+                          {hasListing && (
                             <h3 className="font-semibold text-sm truncate">{title}</h3>
                           )}
                           <p className="text-sm text-muted-foreground line-clamp-2 mt-0.5">
@@ -133,7 +116,7 @@ export default function Drafts() {
                           </p>
                         </div>
                         <Badge variant="outline" className="shrink-0 text-xs">
-                          {KIND_LABELS[post.kind]}
+                          {hasListing ? 'Promo' : 'Note'}
                         </Badge>
                       </div>
 
@@ -143,9 +126,15 @@ export default function Drafts() {
                           {formatDistanceToNow(new Date(post.updatedAt * 1000), { addSuffix: true })}
                         </span>
 
-                        {post.kind === 'listing' && post.listingFields?.price && (
+                        {post.importedListing?.price && (
                           <span className="text-xs font-medium text-primary">
-                            {post.listingFields.price} {post.listingFields.currency}
+                            {post.importedListing.price} {post.importedListing.currency}
+                          </span>
+                        )}
+
+                        {post.media.length > 0 && (
+                          <span className="text-xs text-muted-foreground">
+                            {post.media.length} image{post.media.length !== 1 ? 's' : ''}
                           </span>
                         )}
 

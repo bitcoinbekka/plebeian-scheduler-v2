@@ -8,7 +8,6 @@ import {
   GripVertical,
   ShoppingBag,
   MessageSquare,
-  BookOpen,
   ArrowUp,
   ArrowDown,
   Send,
@@ -44,14 +43,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useScheduler } from '@/contexts/SchedulerContext';
 import { useToast } from '@/hooks/useToast';
-import { format, formatDistanceToNow } from 'date-fns';
+import { format } from 'date-fns';
 import type { SchedulerPost } from '@/lib/types';
-
-const KIND_ICONS = {
-  note: MessageSquare,
-  listing: ShoppingBag,
-  article: BookOpen,
-};
 
 const STATUS_BADGES: Record<string, { variant: 'default' | 'outline' | 'destructive' | 'secondary'; icon: React.ElementType }> = {
   scheduled: { variant: 'default', icon: CalendarClock },
@@ -60,6 +53,11 @@ const STATUS_BADGES: Record<string, { variant: 'default' | 'outline' | 'destruct
   failed: { variant: 'destructive', icon: AlertTriangle },
   draft: { variant: 'outline', icon: Clock },
 };
+
+function getPostTitle(post: SchedulerPost): string {
+  if (post.importedListing?.title) return post.importedListing.title;
+  return post.content.slice(0, 60) || 'Empty note';
+}
 
 export default function QueuePage() {
   useSeoMeta({
@@ -94,25 +92,24 @@ export default function QueuePage() {
   };
 
   const handleMoveInQueue = (post: SchedulerPost, direction: 'up' | 'down') => {
-    const queuePosts = posts
+    const qPosts = posts
       .filter(p => p.queueName === post.queueName && p.status === 'queued')
       .sort((a, b) => a.queuePosition - b.queuePosition);
 
-    const idx = queuePosts.findIndex(p => p.id === post.id);
+    const idx = qPosts.findIndex(p => p.id === post.id);
     if (direction === 'up' && idx > 0) {
-      const ids = queuePosts.map(p => p.id);
+      const ids = qPosts.map(p => p.id);
       [ids[idx], ids[idx - 1]] = [ids[idx - 1], ids[idx]];
       reorderQueue(post.queueName, ids);
     }
-    if (direction === 'down' && idx < queuePosts.length - 1) {
-      const ids = queuePosts.map(p => p.id);
+    if (direction === 'down' && idx < qPosts.length - 1) {
+      const ids = qPosts.map(p => p.id);
       [ids[idx], ids[idx + 1]] = [ids[idx + 1], ids[idx]];
       reorderQueue(post.queueName, ids);
     }
   };
 
   const handlePromoteToScheduled = (post: SchedulerPost) => {
-    // Set to 1 hour from now by default
     const updated: SchedulerPost = {
       ...post,
       status: 'scheduled',
@@ -122,14 +119,8 @@ export default function QueuePage() {
     toast({ title: 'Moved to scheduled' });
   };
 
-  const getPostTitle = (post: SchedulerPost): string => {
-    if (post.kind === 'listing') return post.listingFields?.title || 'Untitled Listing';
-    if (post.kind === 'article') return post.articleFields?.title || 'Untitled Article';
-    return post.content.slice(0, 60) || 'Empty note';
-  };
-
   const renderPostCard = (post: SchedulerPost, showReorder = false) => {
-    const KindIcon = KIND_ICONS[post.kind];
+    const hasListing = !!post.importedListing;
     const statusInfo = STATUS_BADGES[post.status] || STATUS_BADGES.draft;
     const StatusIcon = statusInfo.icon;
 
@@ -159,7 +150,11 @@ export default function QueuePage() {
               </div>
             )}
             <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
-              <KindIcon className="w-4 h-4 text-primary" />
+              {hasListing ? (
+                <ShoppingBag className="w-4 h-4 text-primary" />
+              ) : (
+                <MessageSquare className="w-4 h-4 text-primary" />
+              )}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate">{getPostTitle(post)}</p>
@@ -252,7 +247,7 @@ export default function QueuePage() {
 
       {/* Named Queues */}
       {queues.map(queue => {
-        const queuePosts = posts
+        const qPosts = posts
           .filter(p => p.queueName === queue.name)
           .sort((a, b) => a.queuePosition - b.queuePosition);
 
@@ -261,7 +256,7 @@ export default function QueuePage() {
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                 <ListOrdered className="w-4 h-4 text-amber-500" />
-                {queue.name} ({queuePosts.length})
+                {queue.name} ({qPosts.length})
               </h2>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
@@ -291,7 +286,7 @@ export default function QueuePage() {
                 </AlertDialogContent>
               </AlertDialog>
             </div>
-            {queuePosts.length === 0 ? (
+            {qPosts.length === 0 ? (
               <Card className="border-dashed">
                 <CardContent className="py-4 text-center text-sm text-muted-foreground">
                   Queue is empty
@@ -299,7 +294,7 @@ export default function QueuePage() {
               </Card>
             ) : (
               <div className="space-y-2">
-                {queuePosts.map(p => renderPostCard(p, true))}
+                {qPosts.map(p => renderPostCard(p, true))}
               </div>
             )}
           </div>
@@ -312,14 +307,14 @@ export default function QueuePage() {
           <DialogHeader>
             <DialogTitle>Create New Queue</DialogTitle>
             <DialogDescription>
-              Group related posts together for easy management and batch scheduling.
+              Group related promo notes together for easy management and batch scheduling.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <label className="text-sm font-medium">Queue Name</label>
               <Input
-                placeholder="e.g., Weekly Listings, Product Launch"
+                placeholder="e.g., Weekly Promos, Product Launch"
                 value={newQueueName}
                 onChange={e => setNewQueueName(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleCreateQueue()}

@@ -10,9 +10,8 @@ import {
   Clock,
   ArrowRight,
   TrendingUp,
-  ShoppingBag,
-  BookOpen,
   MessageSquare,
+  ShoppingBag,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -20,6 +19,7 @@ import { Badge } from '@/components/ui/badge';
 import { useScheduler } from '@/contexts/SchedulerContext';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { format, formatDistanceToNow } from 'date-fns';
+import type { SchedulerPost } from '@/lib/types';
 
 const STAT_CARDS = [
   { key: 'drafts' as const, label: 'Drafts', icon: FileText, color: 'text-blue-500', bg: 'bg-blue-500/10' },
@@ -29,16 +29,16 @@ const STAT_CARDS = [
   { key: 'failed' as const, label: 'Failed', icon: AlertTriangle, color: 'text-destructive', bg: 'bg-destructive/10' },
 ];
 
-const KIND_ICONS = {
-  note: MessageSquare,
-  listing: ShoppingBag,
-  article: BookOpen,
-};
+/** Get a human-friendly title for a promo note */
+function getPostTitle(post: SchedulerPost): string {
+  if (post.importedListing?.title) return post.importedListing.title;
+  return post.content.slice(0, 60) || 'Empty note';
+}
 
 export default function Dashboard() {
   useSeoMeta({
     title: 'Dashboard - Plebeian Scheduler',
-    description: 'Manage your scheduled Nostr posts, NIP-99 listings, and articles.',
+    description: 'Manage your scheduled promotional Nostr posts.',
   });
 
   const { posts, stats } = useScheduler();
@@ -66,13 +66,13 @@ export default function Dashboard() {
         <div>
           <h1 className="font-display text-3xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground mt-1">
-            Your merchant command center
+            Your merchant marketing command center
           </p>
         </div>
         <Link to="/compose">
           <Button className="gap-2 shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-shadow">
             <PenSquare className="w-4 h-4" />
-            New Post
+            New Promo Note
           </Button>
         </Link>
       </div>
@@ -122,12 +122,12 @@ export default function Dashboard() {
                 <Clock className="w-8 h-8 mx-auto text-muted-foreground/40 mb-2" />
                 <p className="text-sm text-muted-foreground">No scheduled posts yet</p>
                 <Link to="/compose" className="text-xs text-primary hover:underline mt-1 inline-block">
-                  Create your first scheduled post
+                  Create your first scheduled promo note
                 </Link>
               </div>
             ) : (
               upcoming.map(post => {
-                const KindIcon = KIND_ICONS[post.kind];
+                const hasListing = !!post.importedListing;
                 return (
                   <Link
                     key={post.id}
@@ -135,15 +135,15 @@ export default function Dashboard() {
                     className="flex items-center gap-3 p-3 rounded-lg hover:bg-secondary/50 transition-colors group"
                   >
                     <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
-                      <KindIcon className="w-4 h-4 text-primary" />
+                      {hasListing ? (
+                        <ShoppingBag className="w-4 h-4 text-primary" />
+                      ) : (
+                        <MessageSquare className="w-4 h-4 text-primary" />
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">
-                        {post.kind === 'listing'
-                          ? post.listingFields?.title || 'Untitled Listing'
-                          : post.kind === 'article'
-                            ? post.articleFields?.title || 'Untitled Article'
-                            : post.content.slice(0, 60) || 'Empty note'}
+                        {getPostTitle(post)}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {post.scheduledAt && format(new Date(post.scheduledAt * 1000), 'MMM d, yyyy h:mm a')}
@@ -175,23 +175,23 @@ export default function Dashboard() {
               </div>
             ) : (
               recent.map(post => {
-                const KindIcon = KIND_ICONS[post.kind];
                 const isPublished = post.status === 'published';
+                const hasListing = !!post.importedListing;
                 return (
                   <div
                     key={post.id}
                     className="flex items-center gap-3 p-3 rounded-lg"
                   >
                     <div className={`w-8 h-8 rounded-md flex items-center justify-center shrink-0 ${isPublished ? 'bg-emerald-500/10' : 'bg-destructive/10'}`}>
-                      <KindIcon className={`w-4 h-4 ${isPublished ? 'text-emerald-500' : 'text-destructive'}`} />
+                      {hasListing ? (
+                        <ShoppingBag className={`w-4 h-4 ${isPublished ? 'text-emerald-500' : 'text-destructive'}`} />
+                      ) : (
+                        <MessageSquare className={`w-4 h-4 ${isPublished ? 'text-emerald-500' : 'text-destructive'}`} />
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">
-                        {post.kind === 'listing'
-                          ? post.listingFields?.title || 'Untitled Listing'
-                          : post.kind === 'article'
-                            ? post.articleFields?.title || 'Untitled Article'
-                            : post.content.slice(0, 60) || 'Empty note'}
+                        {getPostTitle(post)}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {formatDistanceToNow(new Date(post.updatedAt * 1000), { addSuffix: true })}
@@ -234,42 +234,29 @@ export default function Dashboard() {
 
       {/* Quick actions for empty state */}
       {posts.length === 0 && user && (
-        <div className="grid sm:grid-cols-3 gap-4 animate-fade-in">
-          <Link to="/compose?kind=listing">
+        <div className="grid sm:grid-cols-2 gap-4 animate-fade-in">
+          <Link to="/compose">
             <Card className="hover:shadow-lg hover:border-primary/20 transition-all duration-300 cursor-pointer group h-full">
               <CardContent className="p-6 text-center">
                 <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
                   <ShoppingBag className="w-6 h-6 text-primary" />
                 </div>
-                <h3 className="font-semibold text-sm">Create Listing</h3>
+                <h3 className="font-semibold text-sm">Promote a Listing</h3>
                 <p className="text-xs text-muted-foreground mt-1">
-                  NIP-99 classified listing for Plebeian Market
+                  Import a Plebeian Market listing and craft a promo note
                 </p>
               </CardContent>
             </Card>
           </Link>
-          <Link to="/compose?kind=note">
-            <Card className="hover:shadow-lg hover:border-primary/20 transition-all duration-300 cursor-pointer group h-full">
+          <Link to="/compose">
+            <Card className="hover:shadow-lg hover:border-blue-500/20 transition-all duration-300 cursor-pointer group h-full">
               <CardContent className="p-6 text-center">
                 <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
                   <MessageSquare className="w-6 h-6 text-blue-500" />
                 </div>
                 <h3 className="font-semibold text-sm">Write a Note</h3>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Short-form text note (kind 1)
-                </p>
-              </CardContent>
-            </Card>
-          </Link>
-          <Link to="/compose?kind=article">
-            <Card className="hover:shadow-lg hover:border-primary/20 transition-all duration-300 cursor-pointer group h-full">
-              <CardContent className="p-6 text-center">
-                <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
-                  <BookOpen className="w-6 h-6 text-emerald-500" />
-                </div>
-                <h3 className="font-semibold text-sm">Write Article</h3>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Long-form content (NIP-23)
+                  Schedule a promotional note or announcement
                 </p>
               </CardContent>
             </Card>

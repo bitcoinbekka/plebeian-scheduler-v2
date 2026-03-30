@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
+import { nip19 } from 'nostr-tools';
 import {
   Search,
-  Image as ImageIcon,
   Tag,
   MapPin,
   Clock,
@@ -26,13 +26,68 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import type { NostrMetadata } from '@nostrify/nostrify';
-import type { SchedulerPost, Currency, PriceFrequency, ListingStatus } from '@/lib/types';
+import type { SchedulerPost, ImportedListing, UploadedImage } from '@/lib/types';
 
 interface ListingBrowserProps {
-  onImport: (data: Partial<SchedulerPost>) => void;
+  onImport: (data: { content: string; media: UploadedImage[]; importedListing: ImportedListing }) => void;
 }
 
 type BrowseMode = 'mine' | 'all';
+
+/** Build an naddr1 for a NIP-99 listing */
+function buildNaddr(listing: ExistingListing): string {
+  try {
+    return nip19.naddrEncode({
+      kind: 30402,
+      pubkey: listing.event.pubkey,
+      identifier: listing.dTag,
+    });
+  } catch {
+    return '';
+  }
+}
+
+/** Build a promo note content string from listing data */
+function buildPromoContent(listing: ExistingListing): string {
+  const parts: string[] = [];
+
+  // Title as the hook
+  if (listing.title) {
+    parts.push(listing.title);
+  }
+
+  // Summary or a snippet of description
+  if (listing.summary) {
+    parts.push(listing.summary);
+  } else if (listing.content) {
+    // Take first ~200 chars of the listing description
+    const snippet = listing.content.length > 200
+      ? listing.content.slice(0, 200).trim() + '...'
+      : listing.content;
+    parts.push(snippet);
+  }
+
+  // Price line
+  if (listing.price) {
+    const currencyLabel = listing.currency === 'SAT' ? 'sats'
+      : listing.currency === 'BTC' ? 'BTC'
+        : listing.currency;
+    parts.push(`Price: ${listing.price} ${currencyLabel}`);
+  }
+
+  // Location
+  if (listing.location) {
+    parts.push(`📍 ${listing.location}`);
+  }
+
+  // Link to the original listing via nostr: URI
+  const naddr = buildNaddr(listing);
+  if (naddr) {
+    parts.push(`\nnostr:${naddr}`);
+  }
+
+  return parts.join('\n\n');
+}
 
 /** Small inline author badge */
 function AuthorBadge({ pubkey }: { pubkey: string }) {
@@ -163,24 +218,32 @@ export function ListingBrowser({ onImport }: ListingBrowserProps) {
   );
 
   const handleImportListing = useCallback((listing: ExistingListing) => {
+    // Build a promo note from the listing data
+    const promoContent = buildPromoContent(listing);
+
+    // Convert listing images to UploadedImage format for media attachments
+    const media: UploadedImage[] = listing.images.map(img => ({
+      url: img.url,
+      dimensions: img.dimensions,
+    }));
+
+    // Store the imported listing metadata for AI context / reference
+    const importedListing: ImportedListing = {
+      naddr: buildNaddr(listing),
+      title: listing.title,
+      summary: listing.summary,
+      price: listing.price,
+      currency: listing.currency || 'SAT',
+      location: listing.location,
+      categories: listing.categories,
+      images: media,
+      authorPubkey: listing.event.pubkey,
+    };
+
     onImport({
-      content: listing.content,
-      dTag: listing.dTag,
-      listingFields: {
-        title: listing.title,
-        summary: listing.summary,
-        price: listing.price,
-        currency: (listing.currency || 'SAT') as Currency,
-        priceFrequency: (listing.priceFrequency || '') as PriceFrequency,
-        location: listing.location,
-        status: (listing.status || 'active') as ListingStatus,
-        categories: listing.categories,
-        images: listing.images.map(img => ({
-          url: img.url,
-          dimensions: img.dimensions,
-        })),
-        shippingInfo: '',
-      },
+      content: promoContent,
+      media,
+      importedListing,
     });
   }, [onImport]);
 
@@ -216,7 +279,7 @@ export function ListingBrowser({ onImport }: ListingBrowserProps) {
             <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
               <ShoppingBag className="w-4 h-4 text-primary" />
             </div>
-            Import Existing Listing
+            Import from Listing
           </CardTitle>
           <div className="flex items-center gap-2">
             {!isOpen && myListings && myListings.length > 0 && (
@@ -231,6 +294,11 @@ export function ListingBrowser({ onImport }: ListingBrowserProps) {
             )}
           </div>
         </button>
+        {!isOpen && (
+          <p className="text-xs text-muted-foreground mt-1 ml-9">
+            Import product data from your Plebeian Market listings to craft a promo post
+          </p>
+        )}
       </CardHeader>
 
       {isOpen && (
@@ -274,8 +342,6 @@ export function ListingBrowser({ onImport }: ListingBrowserProps) {
                 value={allSearchInput}
                 onChange={e => {
                   setAllSearchInput(e.target.value);
-                  // For "my" mode, filter instantly (client-side)
-                  // For "all" mode, user needs to press Search
                 }}
                 onKeyDown={e => {
                   if (e.key === 'Enter' && mode === 'all') {
@@ -302,12 +368,12 @@ export function ListingBrowser({ onImport }: ListingBrowserProps) {
           </div>
 
           {/* Info text */}
-          {mode === 'all' && (
-            <p className="text-xs text-muted-foreground">
-              Search all NIP-99 classified listings published on your connected relays.
-              {user && ' Results from all merchants, not just yours.'}
-            </p>
-          )}
+          <p className="text-xs text-muted-foreground">
+            {mode === 'all'
+              ? `Search NIP-99 listings on your relays. Pick one to auto-generate a promo note.${user ? ' Results from all merchants.' : ''}`
+              : 'Select a listing to auto-generate a promotional note with its title, price, images, and a link back.'
+            }
+          </p>
 
           {/* Results */}
           <ScrollArea className="max-h-[280px] -mx-1 px-1">
@@ -324,7 +390,7 @@ export function ListingBrowser({ onImport }: ListingBrowserProps) {
                 </p>
                 {mode === 'mine' && !allSearchInput && (
                   <p className="text-xs text-muted-foreground mt-1">
-                    Publish a listing on Plebeian Market first, then import it here.
+                    Publish a listing on Plebeian Market first, then import it here to promote.
                   </p>
                 )}
               </div>

@@ -30,20 +30,29 @@ describe('Scheduler publish — due post detection', () => {
 
   it('finds a post scheduled in the past', () => {
     const post: SchedulerPost = {
-      ...createNewPost('listing', 'pk'),
+      ...createNewPost('pk'),
       status: 'scheduled',
       scheduledAt: now - 60, // 1 minute ago
     };
-    post.listingFields!.title = 'Past Due Listing';
+    post.content = 'Past Due Promo';
+    post.importedListing = {
+      title: 'Past Due Listing',
+      summary: '',
+      price: '',
+      currency: 'SAT',
+      location: '',
+      categories: [],
+      images: [],
+    };
 
     const due = getDuePosts([post], now);
     expect(due.length).toBe(1);
-    expect(due[0].listingFields?.title).toBe('Past Due Listing');
+    expect(due[0].importedListing?.title).toBe('Past Due Listing');
   });
 
   it('finds a post scheduled at exactly now', () => {
     const post: SchedulerPost = {
-      ...createNewPost('note', 'pk'),
+      ...createNewPost('pk'),
       status: 'scheduled',
       scheduledAt: now,
     };
@@ -53,7 +62,7 @@ describe('Scheduler publish — due post detection', () => {
 
   it('skips a post scheduled in the future', () => {
     const post: SchedulerPost = {
-      ...createNewPost('listing', 'pk'),
+      ...createNewPost('pk'),
       status: 'scheduled',
       scheduledAt: now + 3600,
     };
@@ -63,7 +72,7 @@ describe('Scheduler publish — due post detection', () => {
 
   it('skips draft posts even if scheduledAt is in the past', () => {
     const post: SchedulerPost = {
-      ...createNewPost('note', 'pk'),
+      ...createNewPost('pk'),
       status: 'draft',
       scheduledAt: now - 600,
     };
@@ -73,7 +82,7 @@ describe('Scheduler publish — due post detection', () => {
 
   it('skips published posts', () => {
     const post: SchedulerPost = {
-      ...createNewPost('listing', 'pk'),
+      ...createNewPost('pk'),
       status: 'published',
       scheduledAt: now - 600,
       publishedAt: now - 300,
@@ -85,7 +94,7 @@ describe('Scheduler publish — due post detection', () => {
 
   it('skips DVM-delegated posts (useDvm = true)', () => {
     const post: SchedulerPost = {
-      ...createNewPost('listing', 'pk'),
+      ...createNewPost('pk'),
       status: 'scheduled',
       scheduledAt: now - 60,
       useDvm: true,
@@ -98,17 +107,17 @@ describe('Scheduler publish — due post detection', () => {
   it('handles mixed batch: returns only due non-DVM scheduled posts', () => {
     const posts: SchedulerPost[] = [
       // Should be published: due, scheduled, not DVM
-      { ...createNewPost('listing', 'pk'), status: 'scheduled', scheduledAt: now - 120 },
+      { ...createNewPost('pk'), status: 'scheduled', scheduledAt: now - 120 },
       // Should be published: due, scheduled, not DVM
-      { ...createNewPost('note', 'pk'), status: 'scheduled', scheduledAt: now },
+      { ...createNewPost('pk'), status: 'scheduled', scheduledAt: now },
       // Should NOT: future
-      { ...createNewPost('listing', 'pk'), status: 'scheduled', scheduledAt: now + 600 },
+      { ...createNewPost('pk'), status: 'scheduled', scheduledAt: now + 600 },
       // Should NOT: DVM
-      { ...createNewPost('article', 'pk'), status: 'scheduled', scheduledAt: now - 60, useDvm: true, dvmRelays: [] },
+      { ...createNewPost('pk'), status: 'scheduled', scheduledAt: now - 60, useDvm: true, dvmRelays: [] },
       // Should NOT: draft
-      { ...createNewPost('note', 'pk'), status: 'draft', scheduledAt: null },
+      { ...createNewPost('pk'), status: 'draft', scheduledAt: null },
       // Should NOT: already published
-      { ...createNewPost('listing', 'pk'), status: 'published', scheduledAt: now - 300, publishedAt: now - 200, publishedEventId: 'x' },
+      { ...createNewPost('pk'), status: 'published', scheduledAt: now - 300, publishedAt: now - 200, publishedEventId: 'x' },
     ];
 
     const due = getDuePosts(posts, now);
@@ -119,54 +128,43 @@ describe('Scheduler publish — due post detection', () => {
   });
 });
 
-describe('Scheduler publish — event output for scheduled listing', () => {
-  it('builds a correct NIP-99 event for a scheduled listing that is due', () => {
-    const scheduledTs = 1743264000;
+describe('Scheduler publish — event output for scheduled promo note', () => {
+  it('builds a correct kind 1 event for a promo note that is due', () => {
     const post: SchedulerPost = {
-      ...createNewPost('listing', 'merchant-pubkey-hex'),
+      ...createNewPost('merchant-pubkey-hex'),
       status: 'scheduled',
-      scheduledAt: scheduledTs,
-      dTag: 'handmade-soap-001',
-      content: 'Organic handmade soap. All natural ingredients.\n\nBitcoin accepted.',
+      scheduledAt: 1743264000,
+      content: 'Check out my Organic Handmade Soap! 5,000 sats\n\nAll-natural soap, Bitcoin only\n📍 Portland, OR',
     };
-    post.listingFields = {
+    post.media = [
+      { url: 'https://example.com/soap.jpg', mimeType: 'image/jpeg', dimensions: '800x600' },
+    ];
+    post.importedListing = {
       title: 'Organic Handmade Soap',
       summary: 'All-natural soap, Bitcoin only',
       price: '5000',
       currency: 'SAT',
-      priceFrequency: '',
       location: 'Portland, OR',
-      status: 'active',
       categories: ['soap', 'handmade', 'organic'],
-      images: [
-        { url: 'https://example.com/soap.jpg', mimeType: 'image/jpeg', dimensions: '800x600' },
-      ],
-      shippingInfo: '',
+      images: [{ url: 'https://example.com/soap.jpg', dimensions: '800x600' }],
     };
 
     const event = buildEvent(post);
 
-    // Verify the full event structure matches NIP-99 spec
-    expect(event.kind).toBe(30402);
-    expect(event.created_at).toBe(scheduledTs);
-    expect(event.content).toContain('Organic handmade soap');
+    // Always kind 1
+    expect(event.kind).toBe(1);
+    expect(event.content).toContain('Organic Handmade Soap');
+    expect(event.content).toContain('https://example.com/soap.jpg');
 
-    // Verify all NIP-99 tags are present
-    const tagMap = new Map<string, string[][]>();
-    for (const tag of event.tags) {
-      if (!tagMap.has(tag[0])) tagMap.set(tag[0], []);
-      tagMap.get(tag[0])!.push(tag);
-    }
+    // NIP-92 imeta tag
+    const imetaTags = event.tags.filter(t => t[0] === 'imeta');
+    expect(imetaTags.length).toBe(1);
+    expect(imetaTags[0]).toContain('url https://example.com/soap.jpg');
+    expect(imetaTags[0]).toContain('m image/jpeg');
 
-    expect(tagMap.get('d')![0]).toEqual(['d', 'handmade-soap-001']);
-    expect(tagMap.get('title')![0]).toEqual(['title', 'Organic Handmade Soap']);
-    expect(tagMap.get('summary')![0]).toEqual(['summary', 'All-natural soap, Bitcoin only']);
-    expect(tagMap.get('price')![0]).toEqual(['price', '5000', 'SAT']);
-    expect(tagMap.get('location')![0]).toEqual(['location', 'Portland, OR']);
-    expect(tagMap.get('status')![0]).toEqual(['status', 'active']);
-    expect(tagMap.get('published_at')![0]).toEqual(['published_at', String(scheduledTs)]);
-    expect(tagMap.get('t')!.length).toBe(3);
-    expect(tagMap.get('image')!.length).toBe(1);
-    expect(tagMap.get('imeta')!.length).toBe(1);
+    // No NIP-99 specific tags (d, title, price, etc.)
+    expect(event.tags.find(t => t[0] === 'd')).toBeUndefined();
+    expect(event.tags.find(t => t[0] === 'title')).toBeUndefined();
+    expect(event.tags.find(t => t[0] === 'price')).toBeUndefined();
   });
 });

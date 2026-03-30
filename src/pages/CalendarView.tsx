@@ -7,7 +7,6 @@ import {
   ChevronRight,
   ShoppingBag,
   MessageSquare,
-  BookOpen,
   Clock,
   PenSquare,
 } from 'lucide-react';
@@ -31,18 +30,6 @@ import {
 import { cn } from '@/lib/utils';
 import type { SchedulerPost } from '@/lib/types';
 
-const KIND_ICONS = {
-  note: MessageSquare,
-  listing: ShoppingBag,
-  article: BookOpen,
-};
-
-const KIND_COLORS = {
-  note: 'bg-blue-500',
-  listing: 'bg-primary',
-  article: 'bg-emerald-500',
-};
-
 const STATUS_COLORS: Record<string, string> = {
   scheduled: 'bg-primary',
   published: 'bg-emerald-500',
@@ -52,6 +39,11 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function getPostTitle(post: SchedulerPost): string {
+  if (post.importedListing?.title) return post.importedListing.title;
+  return post.content.slice(0, 40) || 'Empty note';
+}
 
 export default function CalendarView() {
   useSeoMeta({
@@ -95,12 +87,6 @@ export default function CalendarView() {
       return tsA - tsB;
     });
   }, [selectedDate, postsByDate]);
-
-  const getPostTitle = (post: SchedulerPost): string => {
-    if (post.kind === 'listing') return post.listingFields?.title || 'Untitled Listing';
-    if (post.kind === 'article') return post.articleFields?.title || 'Untitled Article';
-    return post.content.slice(0, 40) || 'Empty note';
-  };
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -236,15 +222,19 @@ export default function CalendarView() {
             </Card>
           ) : (
             selectedDayPosts.map(post => {
-              const KindIcon = KIND_ICONS[post.kind];
+              const hasListing = !!post.importedListing;
               const ts = post.scheduledAt ?? post.createdAt;
 
               return (
                 <Card key={post.id} className="hover:shadow-md transition-shadow">
                   <CardContent className="p-3">
                     <div className="flex items-start gap-3">
-                      <div className={cn('w-8 h-8 rounded-md flex items-center justify-center shrink-0', KIND_COLORS[post.kind] + '/15')}>
-                        <KindIcon className={cn('w-4 h-4', KIND_COLORS[post.kind].replace('bg-', 'text-'))} />
+                      <div className={cn('w-8 h-8 rounded-md flex items-center justify-center shrink-0', hasListing ? 'bg-primary/15' : 'bg-blue-500/15')}>
+                        {hasListing ? (
+                          <ShoppingBag className="w-4 h-4 text-primary" />
+                        ) : (
+                          <MessageSquare className="w-4 h-4 text-blue-500" />
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">{getPostTitle(post)}</p>

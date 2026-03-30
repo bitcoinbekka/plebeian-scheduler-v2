@@ -2,9 +2,6 @@ import { useState, useCallback, useMemo } from 'react';
 import { useSeoMeta } from '@unhead/react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
-  ShoppingBag,
-  MessageSquare,
-  BookOpen,
   Save,
   CalendarClock,
   Send,
@@ -13,22 +10,18 @@ import {
   Trash2,
   ImageIcon,
   Clock,
-  Tag,
-  MapPin,
-  DollarSign,
   X,
-  Plus,
   ChevronDown,
   Sparkles,
+  ShoppingBag,
+  Info,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Separator } from '@/components/ui/separator';
@@ -51,24 +44,13 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useToast } from '@/hooks/useToast';
 import { buildEvent } from '@/lib/eventBuilder';
-import {
-  CURRENCIES, PRICE_FREQUENCIES,
-  createNewPost,
-  type PostKind, type SchedulerPost, type Currency, type PriceFrequency, type ListingStatus,
-} from '@/lib/types';
-import { cn } from '@/lib/utils';
+import { createNewPost, type SchedulerPost, type ImportedListing, type UploadedImage } from '@/lib/types';
 import { format } from 'date-fns';
-
-const KIND_OPTIONS = [
-  { value: 'listing' as PostKind, label: 'Marketplace Listing', icon: ShoppingBag, desc: 'Product or service for sale', color: 'text-primary' },
-  { value: 'note' as PostKind, label: 'Short Note', icon: MessageSquare, desc: 'Quick announcement or update', color: 'text-blue-500' },
-  { value: 'article' as PostKind, label: 'Long-form Article', icon: BookOpen, desc: 'Blog post or guide', color: 'text-emerald-500' },
-];
 
 export default function Compose() {
   useSeoMeta({
     title: 'Compose - Plebeian Scheduler',
-    description: 'Create and schedule Nostr posts, marketplace listings, and articles.',
+    description: 'Craft and schedule promotional Nostr posts for your marketplace listings.',
   });
 
   const [searchParams] = useSearchParams();
@@ -79,7 +61,6 @@ export default function Compose() {
   const { mutateAsync: publishEvent, isPending: isPublishing } = useNostrPublish();
 
   const editId = searchParams.get('edit');
-  const initialKind = (searchParams.get('kind') as PostKind) || 'listing';
 
   const existingPost = useMemo(() => {
     if (editId) return posts.find(p => p.id === editId);
@@ -88,8 +69,7 @@ export default function Compose() {
 
   const [post, setPost] = useState<SchedulerPost>(() => {
     if (existingPost) return existingPost;
-    // DVM on by default for scheduled posts
-    const p = createNewPost(initialKind, user?.pubkey ?? '');
+    const p = createNewPost(user?.pubkey ?? '');
     p.useDvm = true;
     return p;
   });
@@ -104,47 +84,11 @@ export default function Compose() {
     return '12:00';
   });
   const [showScheduler, setShowScheduler] = useState(false);
-  const [newCategory, setNewCategory] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   const updateField = useCallback(<K extends keyof SchedulerPost>(field: K, value: SchedulerPost[K]) => {
     setPost(prev => ({ ...prev, [field]: value }));
   }, []);
-
-  const updateListingField = useCallback((field: string, value: string | string[]) => {
-    setPost(prev => {
-      if (!prev.listingFields) return prev;
-      return { ...prev, listingFields: { ...prev.listingFields, [field]: value } };
-    });
-  }, []);
-
-  const updateArticleField = useCallback((field: string, value: string | string[]) => {
-    setPost(prev => {
-      if (!prev.articleFields) return prev;
-      return { ...prev, articleFields: { ...prev.articleFields, [field]: value } };
-    });
-  }, []);
-
-  const addCategory = useCallback(() => {
-    if (!newCategory.trim()) return;
-    const cats = post.kind === 'listing'
-      ? post.listingFields?.categories ?? []
-      : post.articleFields?.categories ?? [];
-    if (!cats.includes(newCategory.trim().toLowerCase())) {
-      const updated = [...cats, newCategory.trim().toLowerCase()];
-      if (post.kind === 'listing') updateListingField('categories', updated);
-      else updateArticleField('categories', updated);
-    }
-    setNewCategory('');
-  }, [newCategory, post, updateListingField, updateArticleField]);
-
-  const removeCategory = useCallback((cat: string) => {
-    if (post.kind === 'listing') {
-      updateListingField('categories', (post.listingFields?.categories ?? []).filter(c => c !== cat));
-    } else {
-      updateArticleField('categories', (post.articleFields?.categories ?? []).filter(c => c !== cat));
-    }
-  }, [post, updateListingField, updateArticleField]);
 
   // Save as draft
   const handleSaveDraft = useCallback(() => {
@@ -175,7 +119,7 @@ export default function Compose() {
       ...post,
       status: 'scheduled',
       scheduledAt,
-      useDvm: true, // always use DVM for scheduled posts
+      useDvm: true,
       authorPubkey: user?.pubkey ?? post.authorPubkey,
     };
     updatePost(updated);
@@ -184,7 +128,7 @@ export default function Compose() {
     setShowScheduler(false);
     toast({
       title: 'Post scheduled!',
-      description: `Your post will be published on ${format(scheduledDate, 'MMM d, yyyy')} at ${format(scheduledDate, 'h:mm a')}.`,
+      description: `Your promo note will be published on ${format(scheduledDate, 'MMM d, yyyy')} at ${format(scheduledDate, 'h:mm a')}.`,
     });
     navigate('/');
   }, [post, scheduleDate, scheduleTime, user, updatePost, toast, navigate]);
@@ -196,7 +140,7 @@ export default function Compose() {
       ...post,
       status: 'scheduled',
       scheduledAt,
-      useDvm: true, // always use DVM for scheduled posts
+      useDvm: true,
       authorPubkey: user?.pubkey ?? post.authorPubkey,
     };
     updatePost(updated);
@@ -205,7 +149,7 @@ export default function Compose() {
     setShowScheduler(false);
     toast({
       title: `Scheduled in ${label}`,
-      description: `Your post will be published at ${format(new Date(scheduledAt * 1000), 'h:mm a')}.`,
+      description: `Your promo note will be published at ${format(new Date(scheduledAt * 1000), 'h:mm a')}.`,
     });
     navigate('/');
   }, [post, user, updatePost, toast, navigate]);
@@ -216,7 +160,7 @@ export default function Compose() {
 
     try {
       const postToPublish = { ...post, authorPubkey: user.pubkey };
-      const event = buildEvent(postToPublish, false);
+      const event = buildEvent(postToPublish);
 
       const published = await publishEvent({
         kind: event.kind,
@@ -233,7 +177,7 @@ export default function Compose() {
       };
       updatePost(updated);
       setPersisted(true);
-      toast({ title: 'Published!', description: 'Your post is now live on Nostr.' });
+      toast({ title: 'Published!', description: 'Your promo note is now live on Nostr.' });
       navigate('/');
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
@@ -250,30 +194,15 @@ export default function Compose() {
     navigate('/');
   }, [post, persisted, removePost, toast, navigate]);
 
-  const handleSwitchKind = useCallback((newKind: PostKind) => {
-    if (post.kind === newKind) return;
-    const freshPost = createNewPost(newKind, user?.pubkey ?? '');
-    freshPost.content = post.content;
-    freshPost.useDvm = true;
-    setPost(freshPost);
-    setPersisted(false);
-  }, [post, user]);
-
-  // Import from existing Nostr event
-  const handleImport = useCallback((data: Partial<SchedulerPost>) => {
-    setPost(prev => {
-      const updated = { ...prev };
-      if (data.content !== undefined) updated.content = data.content;
-      if (data.dTag !== undefined) updated.dTag = data.dTag;
-      if (data.listingFields && updated.listingFields) {
-        updated.listingFields = { ...updated.listingFields, ...data.listingFields };
-      }
-      if (data.articleFields && updated.articleFields) {
-        updated.articleFields = { ...updated.articleFields, ...data.articleFields };
-      }
-      return updated;
-    });
-    toast({ title: 'Imported!', description: 'All fields have been auto-filled from your listing.' });
+  // Import from listing browser
+  const handleImport = useCallback((data: { content: string; media: UploadedImage[]; importedListing: ImportedListing }) => {
+    setPost(prev => ({
+      ...prev,
+      content: data.content,
+      media: data.media,
+      importedListing: data.importedListing,
+    }));
+    toast({ title: 'Listing imported!', description: 'A promo note has been drafted from your listing. Edit it to your liking.' });
   }, [toast]);
 
   // Insert AI-generated content
@@ -282,7 +211,7 @@ export default function Compose() {
       ...prev,
       content: prev.content ? prev.content + '\n\n' + text : text,
     }));
-    toast({ title: 'Content inserted', description: 'AI-generated text added to your content.' });
+    toast({ title: 'Content inserted', description: 'AI-generated text added to your note.' });
   }, [toast]);
 
   if (!user) {
@@ -293,12 +222,6 @@ export default function Compose() {
     );
   }
 
-  const categories = post.kind === 'listing'
-    ? post.listingFields?.categories ?? []
-    : post.kind === 'article'
-      ? post.articleFields?.categories ?? []
-      : [];
-
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
       {/* Header */}
@@ -308,12 +231,10 @@ export default function Compose() {
         </Button>
         <div className="flex-1">
           <h1 className="font-display text-2xl font-bold">
-            {editId ? 'Edit Post' : 'Compose'}
+            {editId ? 'Edit Promo Note' : 'Compose Promo Note'}
           </h1>
           <p className="text-sm text-muted-foreground">
-            {post.kind === 'listing' && 'Marketplace listing'}
-            {post.kind === 'note' && 'Short note'}
-            {post.kind === 'article' && 'Long-form article'}
+            Craft a promotional note to market your products on Nostr
           </p>
         </div>
         {post.status !== 'draft' && (
@@ -323,180 +244,47 @@ export default function Compose() {
         )}
       </div>
 
-      {/* Kind selector (only when creating new) */}
-      {!editId && (
-        <div className="grid grid-cols-3 gap-3">
-          {KIND_OPTIONS.map(opt => {
-            const Icon = opt.icon;
-            const isSelected = post.kind === opt.value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => handleSwitchKind(opt.value)}
-                className={cn(
-                  'p-4 rounded-xl border-2 transition-all duration-200 text-left',
-                  isSelected
-                    ? 'border-primary bg-primary/5 shadow-md'
-                    : 'border-border hover:border-primary/30 hover:bg-secondary/50'
-                )}
-              >
-                <Icon className={cn('w-5 h-5 mb-2', isSelected ? 'text-primary' : 'text-muted-foreground')} />
-                <p className="text-sm font-semibold">{opt.label}</p>
-                <p className="text-xs text-muted-foreground">{opt.desc}</p>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
       <Tabs defaultValue="content" className="space-y-4">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="content">Content</TabsTrigger>
           <TabsTrigger value="media">
-            <ImageIcon className="w-3.5 h-3.5 mr-1.5" /> Media
+            <ImageIcon className="w-3.5 h-3.5 mr-1.5" /> Media {post.media.length > 0 && `(${post.media.length})`}
           </TabsTrigger>
         </TabsList>
 
         {/* Content Tab */}
         <TabsContent value="content" className="space-y-4">
-          {/* Import Listing Browser — only for listings */}
-          {post.kind === 'listing' && (
-            <ListingBrowser onImport={handleImport} />
-          )}
+          {/* Import Listing Browser */}
+          <ListingBrowser onImport={handleImport} />
 
-          {/* Listing-specific fields */}
-          {post.kind === 'listing' && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <ShoppingBag className="w-4 h-4 text-primary" />
-                  Listing Details
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Title *</Label>
-                  <Input
-                    placeholder="What are you selling?"
-                    value={post.listingFields?.title ?? ''}
-                    onChange={e => updateListingField('title', e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Summary</Label>
-                  <Input
-                    placeholder="Short tagline for your listing..."
-                    value={post.listingFields?.summary ?? ''}
-                    onChange={e => updateListingField('summary', e.target.value)}
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="space-y-2">
-                    <Label className="flex items-center gap-1.5">
-                      <DollarSign className="w-3.5 h-3.5" /> Price
-                    </Label>
-                    <Input
-                      type="number"
-                      placeholder="0"
-                      value={post.listingFields?.price ?? ''}
-                      onChange={e => updateListingField('price', e.target.value)}
-                    />
+          {/* Imported listing reference */}
+          {post.importedListing && (
+            <Card className="bg-primary/5 border-primary/20">
+              <CardContent className="p-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+                    <ShoppingBag className="w-4 h-4 text-primary" />
                   </div>
-                  <div className="space-y-2">
-                    <Label>Currency</Label>
-                    <Select
-                      value={post.listingFields?.currency ?? 'SAT'}
-                      onValueChange={v => updateListingField('currency', v as Currency)}
-                    >
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {CURRENCIES.map(c => (
-                          <SelectItem key={c.value} value={c.value}>{c.symbol} {c.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">
+                      Promoting: {post.importedListing.title}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {post.importedListing.price && `${post.importedListing.price} ${post.importedListing.currency}`}
+                      {post.importedListing.location && ` · ${post.importedListing.location}`}
+                    </p>
                   </div>
-                  <div className="space-y-2">
-                    <Label>Frequency</Label>
-                    <Select
-                      value={post.listingFields?.priceFrequency || 'one-time'}
-                      onValueChange={v => updateListingField('priceFrequency', (v === 'one-time' ? '' : v) as PriceFrequency)}
-                    >
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {PRICE_FREQUENCIES.map(f => (
-                          <SelectItem key={f.value || 'one-time'} value={f.value || 'one-time'}>{f.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label className="flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5" /> Location
-                    </Label>
-                    <Input
-                      placeholder="City, Country or online"
-                      value={post.listingFields?.location ?? ''}
-                      onChange={e => updateListingField('location', e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Status</Label>
-                    <Select
-                      value={post.listingFields?.status ?? 'active'}
-                      onValueChange={v => updateListingField('status', v as ListingStatus)}
-                    >
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="active">Active</SelectItem>
-                        <SelectItem value="sold">Sold</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Article-specific fields */}
-          {post.kind === 'article' && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <BookOpen className="w-4 h-4 text-emerald-500" />
-                  Article Details
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Title *</Label>
-                  <Input
-                    placeholder="Article title..."
-                    value={post.articleFields?.title ?? ''}
-                    onChange={e => updateArticleField('title', e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Summary</Label>
-                  <Input
-                    placeholder="Brief summary of your article..."
-                    value={post.articleFields?.summary ?? ''}
-                    onChange={e => updateArticleField('summary', e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Cover Image URL</Label>
-                  <Input
-                    placeholder="https://..."
-                    value={post.articleFields?.image ?? ''}
-                    onChange={e => updateArticleField('image', e.target.value)}
-                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="w-7 h-7 shrink-0"
+                    onClick={() => setPost(prev => {
+                      const { importedListing: _, ...rest } = prev;
+                      return rest as SchedulerPost;
+                    })}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -506,20 +294,17 @@ export default function Compose() {
           <Card>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-base">
-                  {post.kind === 'note' ? 'Your Note' : 'Description'}
-                </CardTitle>
+                <CardTitle className="text-base">Your Note</CardTitle>
                 <AiGenerateDialog
-                  postKind={post.kind}
                   currentContent={post.content}
-                  listingTitle={post.kind === 'listing' ? post.listingFields?.title : post.kind === 'article' ? post.articleFields?.title : undefined}
+                  listingTitle={post.importedListing?.title}
                   listingContext={
-                    post.kind === 'listing' && post.listingFields
+                    post.importedListing
                       ? [
-                          post.listingFields.summary && `Summary: ${post.listingFields.summary}`,
-                          post.listingFields.price && `Price: ${post.listingFields.price} ${post.listingFields.currency}`,
-                          post.listingFields.location && `Location: ${post.listingFields.location}`,
-                          post.listingFields.categories.length > 0 && `Categories: ${post.listingFields.categories.join(', ')}`,
+                          post.importedListing.summary && `Summary: ${post.importedListing.summary}`,
+                          post.importedListing.price && `Price: ${post.importedListing.price} ${post.importedListing.currency}`,
+                          post.importedListing.location && `Location: ${post.importedListing.location}`,
+                          post.importedListing.categories.length > 0 && `Categories: ${post.importedListing.categories.join(', ')}`,
                         ].filter(Boolean).join('. ')
                       : undefined
                   }
@@ -534,61 +319,23 @@ export default function Compose() {
             </CardHeader>
             <CardContent>
               <Textarea
-                placeholder={
-                  post.kind === 'listing'
-                    ? 'Describe your product or service in detail...'
-                    : post.kind === 'article'
-                      ? 'Write your article...'
-                      : "What's on your mind?"
-                }
+                placeholder="Write your promotional note... e.g. 'Check out my fresh Christmas Cakes! 50,000 sats 🎄'"
                 value={post.content}
                 onChange={e => updateField('content', e.target.value)}
                 className="min-h-[200px] font-mono text-sm"
                 rows={10}
               />
-              <p className="text-xs text-muted-foreground mt-2">
-                {post.content.length} characters
-              </p>
+              <div className="flex items-center justify-between mt-2">
+                <p className="text-xs text-muted-foreground">
+                  {post.content.length} characters
+                </p>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Info className="w-3 h-3" />
+                  This will be published as a kind 1 note
+                </div>
+              </div>
             </CardContent>
           </Card>
-
-          {/* Categories/Tags */}
-          {post.kind !== 'note' && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Tag className="w-4 h-4" />
-                  Categories / Tags
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="Add a category..."
-                    value={newCategory}
-                    onChange={e => setNewCategory(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addCategory())}
-                    className="flex-1"
-                  />
-                  <Button type="button" variant="outline" size="sm" onClick={addCategory}>
-                    <Plus className="w-4 h-4" />
-                  </Button>
-                </div>
-                {categories.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {categories.map(cat => (
-                      <Badge key={cat} variant="secondary" className="gap-1 pr-1">
-                        {cat}
-                        <button type="button" onClick={() => removeCategory(cat)} className="hover:bg-foreground/10 rounded-full p-0.5">
-                          <X className="w-3 h-3" />
-                        </button>
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
         </TabsContent>
 
         {/* Media Tab */}
@@ -597,22 +344,18 @@ export default function Compose() {
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <ImageIcon className="w-4 h-4" />
-                {post.kind === 'listing' ? 'Listing Images' : 'Media Attachments'}
+                Media Attachments
               </CardTitle>
+              {post.media.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Images will be appended to your note and tagged with NIP-92 metadata
+                </p>
+              )}
             </CardHeader>
             <CardContent>
               <ImageUploader
-                images={post.kind === 'listing' ? (post.listingFields?.images ?? []) : post.media}
-                onImagesChange={imgs => {
-                  if (post.kind === 'listing') {
-                    setPost(prev => ({
-                      ...prev,
-                      listingFields: prev.listingFields ? { ...prev.listingFields, images: imgs } : prev.listingFields,
-                    }));
-                  } else {
-                    updateField('media', imgs);
-                  }
-                }}
+                images={post.media}
+                onImagesChange={imgs => updateField('media', imgs)}
               />
             </CardContent>
           </Card>

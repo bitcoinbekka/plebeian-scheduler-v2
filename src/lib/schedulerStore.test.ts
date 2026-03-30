@@ -20,18 +20,27 @@ describe('schedulerStore — posts', () => {
   });
 
   it('savePosts + loadPosts round-trips correctly', () => {
-    const post = createNewPost('listing', 'pubkey123');
-    post.listingFields!.title = 'Test Listing';
+    const post = createNewPost('pubkey123');
+    post.content = 'Test promo note';
+    post.importedListing = {
+      title: 'Test Listing',
+      summary: '',
+      price: '5000',
+      currency: 'SAT',
+      location: '',
+      categories: [],
+      images: [],
+    };
     savePosts([post]);
 
     const loaded = loadPosts();
     expect(loaded.length).toBe(1);
     expect(loaded[0].id).toBe(post.id);
-    expect(loaded[0].listingFields?.title).toBe('Test Listing');
+    expect(loaded[0].importedListing?.title).toBe('Test Listing');
   });
 
   it('upsertPost inserts a new post', () => {
-    const post = createNewPost('note', 'pubkey123');
+    const post = createNewPost('pubkey123');
     post.content = 'Hello';
 
     const result = upsertPost(post);
@@ -40,7 +49,7 @@ describe('schedulerStore — posts', () => {
   });
 
   it('upsertPost updates an existing post by id', () => {
-    const post = createNewPost('note', 'pubkey123');
+    const post = createNewPost('pubkey123');
     post.content = 'Original';
     upsertPost(post);
 
@@ -51,8 +60,8 @@ describe('schedulerStore — posts', () => {
   });
 
   it('deletePost removes by id', () => {
-    const post1 = createNewPost('note', 'pk');
-    const post2 = createNewPost('listing', 'pk');
+    const post1 = createNewPost('pk');
+    const post2 = createNewPost('pk');
     savePosts([post1, post2]);
 
     const result = deletePost(post1.id);
@@ -61,17 +70,17 @@ describe('schedulerStore — posts', () => {
   });
 
   it('getPostsByStatus filters correctly', () => {
-    const draft = createNewPost('note', 'pk');
+    const draft = createNewPost('pk');
     draft.status = 'draft';
 
     const scheduled: SchedulerPost = {
-      ...createNewPost('listing', 'pk'),
+      ...createNewPost('pk'),
       status: 'scheduled',
       scheduledAt: Math.floor(Date.now() / 1000) + 3600,
     };
 
     const published: SchedulerPost = {
-      ...createNewPost('note', 'pk'),
+      ...createNewPost('pk'),
       status: 'published',
       publishedAt: Math.floor(Date.now() / 1000),
       publishedEventId: 'event123',
@@ -92,20 +101,20 @@ describe('schedulerStore — getDueScheduledPosts (scheduler core)', () => {
 
     // Due 5 minutes ago
     const duePost: SchedulerPost = {
-      ...createNewPost('listing', 'pk'),
+      ...createNewPost('pk'),
       status: 'scheduled',
       scheduledAt: now - 300,
     };
 
     // Due in 1 hour (not yet)
     const futurePost: SchedulerPost = {
-      ...createNewPost('note', 'pk'),
+      ...createNewPost('pk'),
       status: 'scheduled',
       scheduledAt: now + 3600,
     };
 
     // Draft (not scheduled — should not be included)
-    const draftPost = createNewPost('note', 'pk');
+    const draftPost = createNewPost('pk');
 
     savePosts([duePost, futurePost, draftPost]);
 
@@ -116,7 +125,7 @@ describe('schedulerStore — getDueScheduledPosts (scheduler core)', () => {
 
   it('returns empty when no posts are due', () => {
     const futurePost: SchedulerPost = {
-      ...createNewPost('listing', 'pk'),
+      ...createNewPost('pk'),
       status: 'scheduled',
       scheduledAt: Math.floor(Date.now() / 1000) + 86400,
     };
@@ -128,7 +137,7 @@ describe('schedulerStore — getDueScheduledPosts (scheduler core)', () => {
   it('does not include already-published posts', () => {
     const now = Math.floor(Date.now() / 1000);
     const publishedPost: SchedulerPost = {
-      ...createNewPost('listing', 'pk'),
+      ...createNewPost('pk'),
       status: 'published',
       scheduledAt: now - 600,
       publishedAt: now - 300,
@@ -164,11 +173,11 @@ describe('schedulerStore — queues', () => {
 describe('schedulerStore — getStats', () => {
   it('counts posts by status', () => {
     const posts: SchedulerPost[] = [
-      { ...createNewPost('note', 'pk'), status: 'draft' },
-      { ...createNewPost('note', 'pk'), status: 'draft' },
-      { ...createNewPost('listing', 'pk'), status: 'scheduled', scheduledAt: 999999999 },
-      { ...createNewPost('note', 'pk'), status: 'published', publishedAt: 100, publishedEventId: 'x' },
-      { ...createNewPost('note', 'pk'), status: 'failed', errorMessage: 'oops' },
+      { ...createNewPost('pk'), status: 'draft' },
+      { ...createNewPost('pk'), status: 'draft' },
+      { ...createNewPost('pk'), status: 'scheduled', scheduledAt: 999999999 },
+      { ...createNewPost('pk'), status: 'published', publishedAt: 100, publishedEventId: 'x' },
+      { ...createNewPost('pk'), status: 'failed', errorMessage: 'oops' },
     ];
     savePosts(posts);
 

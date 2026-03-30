@@ -2,24 +2,36 @@
 
 ## Overview
 
-Plebeian Scheduler is a scheduling tool for Nostr merchants, primarily targeting the Plebeian Market ecosystem. It enables users to compose, schedule, and publish Nostr events at future timestamps.
+Plebeian Scheduler is a social media marketing tool for Nostr merchants. It allows merchants to import their existing Plebeian Market listings (NIP-99), craft promotional notes (kind 1), and schedule those promo notes to go out at specific times.
+
+**Key concept**: The scheduler always publishes **kind 1 notes** (regular Nostr posts). It does NOT publish listings or articles. NIP-99 listing data is used as *source material* to craft compelling promotional posts.
+
+## Workflow
+
+1. Merchant has existing NIP-99 listings on Plebeian Market
+2. They open the scheduler and browse/import a listing
+3. The listing's title, price, images, and description are used to auto-generate a promo note
+4. The merchant edits the note, optionally uses AI to improve it
+5. They schedule the note to publish at a specific time
+6. At publish time, a kind 1 note goes out with the promo text + images + a `nostr:naddr1...` link back to the original listing
 
 ## Standard NIPs Used
 
 ### NIP-01 — Events & `created_at`
 
-All Nostr events use the standard event structure. For scheduled posts, the `created_at` field is set to the future timestamp when the event should appear on relays.
+All published events are **kind 1** (Short Text Notes). The `created_at` field is always set to current time — relays reject future timestamps.
 
 ### NIP-07 — Browser Extension Signer
 
-Events are signed via NIP-07 compatible browser extensions (like Plebeian Signer). The scheduler never handles private keys directly.
+Events are signed via NIP-07 compatible browser extensions. The scheduler never handles private keys directly.
 
-### NIP-23 — Long-form Content
+### NIP-19 — Bech32 Identifiers
 
-- **kind 30023** — Published long-form articles
-- **kind 30024** — Draft articles (saved before publishing)
+When importing a listing, an `naddr1` identifier is generated for the original NIP-99 listing. This is embedded in the promo note content as `nostr:naddr1...` so clients can render a link/preview of the original listing.
 
-Tags used: `d`, `title`, `summary`, `image`, `published_at`, `t`
+### NIP-21 — `nostr:` URI Scheme
+
+The promo note content includes `nostr:naddr1...` URIs pointing back to the original listing. Compatible Nostr clients render these as clickable links or embedded previews.
 
 ### NIP-40 — Event Expiration
 
@@ -43,10 +55,10 @@ The scheduler uses two DVM job types:
 
 #### Delegated Publishing (kind 5905)
 
-For delegated publishing, the scheduler creates job requests:
+For scheduled posts, a DVM job request is published immediately when the user schedules the post. The DVM service provider holds the job and publishes the kind 1 note at the scheduled time.
 
 - **kind 5905** — Job request to publish a scheduled event
-  - Input: The stringified JSON of the unsigned event to publish
+  - Input: The stringified JSON of the unsigned kind 1 event to publish
   - Params: `action` = "publish", `publish_at` = unix timestamp
   - Relays: Target relay URLs for publication
 
@@ -55,7 +67,7 @@ For delegated publishing, the scheduler creates job requests:
   "kind": 5905,
   "content": "",
   "tags": [
-    ["i", "<stringified-event-json>", "text"],
+    ["i", "<stringified-kind-1-event-json>", "text"],
     ["output", "text/plain"],
     ["param", "action", "publish"],
     ["param", "publish_at", "1700000000"],
@@ -72,7 +84,7 @@ Job results would be **kind 6905** from the DVM service provider.
 For AI-assisted content generation, the scheduler publishes text generation job requests to DVM service providers:
 
 - **kind 5050** — Job request for AI text generation
-  - Input: A prompt describing what content to generate
+  - Input: A prompt describing what promotional content to generate
   - Params: `max_tokens`, `temperature`
   - Output: `text/plain`
 
@@ -81,7 +93,7 @@ For AI-assisted content generation, the scheduler publishes text generation job 
   "kind": 5050,
   "content": "",
   "tags": [
-    ["i", "Write a compelling product description for...", "text"],
+    ["i", "Write a compelling promotional post for...", "text"],
     ["output", "text/plain"],
     ["param", "max_tokens", "1024"],
     ["param", "temperature", "0.7"],
@@ -90,7 +102,7 @@ For AI-assisted content generation, the scheduler publishes text generation job 
 }
 ```
 
-Job results are **kind 6050** from the DVM service provider, with the generated text in the `content` field. Job feedback events (**kind 7000**) may indicate processing status or errors.
+Job results are **kind 6050** from the DVM service provider, with the generated text in the `content` field.
 
 ### NIP-92 — Media Attachments
 
@@ -100,40 +112,38 @@ All uploaded media includes `imeta` tags with available metadata:
 ["imeta", "url https://example.com/image.jpg", "m image/jpeg", "dim 1024x768", "x <sha256>"]
 ```
 
-### NIP-99 — Classified Listings
+Media URLs are also appended to the note content, ensuring they display as inline images in all Nostr clients.
 
-The primary use case for Plebeian Market merchants.
+### NIP-99 — Classified Listings (Read-Only)
 
-- **kind 30402** — Published classified listing
-- **kind 30403** — Draft classified listing
+The scheduler **reads** NIP-99 listings (kind 30402) from Nostr relays for import:
 
-Required tags: `d`, `title`, `published_at`
+- Queries the user's own listings: `authors: [user.pubkey], kinds: [30402]`
+- Queries all listings on connected relays: `kinds: [30402]`
+- Parses listing metadata: title, summary, price, location, categories, images
 
-Optional tags: `summary`, `price`, `location`, `status`, `t`, `image`, `imeta`, `expiration`
+This data is used locally to auto-generate promo note content. The scheduler never publishes kind 30402 events.
 
-#### Price Tag Format
+## Example Output
+
+A merchant imports their "Christmas Cakes" listing (NIP-99, kind 30402) and the scheduler generates:
 
 ```json
-["price", "<amount>", "<currency>", "<frequency>"]
+{
+  "kind": 1,
+  "content": "Christmas Cakes & Cookies\n\nFreshly baked holiday treats, made with love!\n\nPrice: 50000 sats\n📍 Austin, TX\n\nnostr:naddr1qqxnzd3e...\nhttps://blossom.example.com/cakes.jpg",
+  "tags": [
+    ["imeta", "url https://blossom.example.com/cakes.jpg", "m image/jpeg", "dim 1200x800"]
+  ],
+  "created_at": 1700000000
+}
 ```
-
-- Currency: ISO 4217 or crypto codes (BTC, SAT, USD, EUR, etc.)
-- Frequency: Optional (hour, day, week, month, year)
-
-## Import from Nostr
-
-The scheduler can import existing published events from Nostr relays to auto-fill the compose form:
-
-- **kind 30402** (NIP-99) — Import existing classified listings with title, description, price, images, categories, and all metadata
-- **kind 30023** (NIP-23) — Import existing long-form articles with title, summary, cover image, and content
-
-Events are queried using `authors: [user.pubkey]` to ensure only the logged-in user's own events are fetched. Imported data populates all relevant form fields, including image URLs from both `image` and `imeta` tags.
 
 ## Local Storage Schema
 
 All scheduler data is stored in browser localStorage (not on Nostr relays) until the event is published:
 
-- `plebeian-scheduler:posts` — Array of SchedulerPost objects
+- `plebeian-scheduler:posts` — Array of SchedulerPost objects (promo notes with optional imported listing metadata)
 - `plebeian-scheduler:queues` — Array of Queue objects
 
 This local-first approach ensures no private data leaks to relays before intentional publishing.
