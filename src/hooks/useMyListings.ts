@@ -1,7 +1,8 @@
 import { useNostr } from '@nostrify/react';
 import { useQuery } from '@tanstack/react-query';
 import { useCurrentUser } from './useCurrentUser';
-import type { NostrEvent } from '@nostrify/nostrify';
+import { useAuthor } from './useAuthor';
+import type { NostrEvent, NostrMetadata } from '@nostrify/nostrify';
 
 /** Parsed listing data from a NIP-99 kind 30402 event */
 export interface ExistingListing {
@@ -20,7 +21,7 @@ export interface ExistingListing {
   publishedAt: number | null;
 }
 
-function parseListing(event: NostrEvent): ExistingListing | null {
+export function parseListing(event: NostrEvent): ExistingListing | null {
   const dTag = event.tags.find(([n]) => n === 'd')?.[1];
   if (!dTag) return null;
 
@@ -104,12 +105,84 @@ export function useMyListings() {
         if (parsed) listings.push(parsed);
       }
 
-      // Sort by most recent first
       listings.sort((a, b) => b.event.created_at - a.event.created_at);
       return listings;
     },
     enabled: !!user,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/**
+ * Searches all NIP-99 classified listings (kind 30402) on relays,
+ * optionally filtered by search term via t tags or by text search.
+ */
+export function useAllListings(searchTerm: string, enabled = true) {
+  const { nostr } = useNostr();
+
+  return useQuery({
+    queryKey: ['all-listings', searchTerm],
+    queryFn: async () => {
+      // Build filter — if search term provided, filter by t tag at relay level
+      const filters: Record<string, unknown>[] = [];
+      const trimmed = searchTerm.trim().toLowerCase();
+
+      if (trimmed) {
+        // Search by t tag (relay-indexed)
+        filters.push({
+          kinds: [30402],
+          '#t': [trimmed],
+          limit: 40,
+        });
+        // Also search without tag filter for broader results
+        filters.push({
+          kinds: [30402],
+          limit: 40,
+        });
+      } else {
+        filters.push({
+          kinds: [30402],
+          limit: 40,
+        });
+      }
+
+      const events = await nostr.query(filters);
+
+      // Deduplicate by event id
+      const seen = new Set<string>();
+      const unique: NostrEvent[] = [];
+      for (const e of events) {
+        if (!seen.has(e.id)) {
+          seen.add(e.id);
+          unique.push(e);
+        }
+      }
+
+      const listings: ExistingListing[] = [];
+      for (const event of unique) {
+        const parsed = parseListing(event);
+        if (parsed) {
+          // If search term, do client-side filtering too
+          if (trimmed) {
+            const matchesTitle = parsed.title.toLowerCase().includes(trimmed);
+            const matchesSummary = parsed.summary.toLowerCase().includes(trimmed);
+            const matchesContent = parsed.content.toLowerCase().includes(trimmed);
+            const matchesCategory = parsed.categories.some(c => c.toLowerCase().includes(trimmed));
+            const matchesLocation = parsed.location.toLowerCase().includes(trimmed);
+            if (matchesTitle || matchesSummary || matchesContent || matchesCategory || matchesLocation) {
+              listings.push(parsed);
+            }
+          } else {
+            listings.push(parsed);
+          }
+        }
+      }
+
+      listings.sort((a, b) => b.event.created_at - a.event.created_at);
+      return listings;
+    },
+    enabled,
+    staleTime: 2 * 60 * 1000,
   });
 }
 
@@ -148,4 +221,14 @@ export function useMyArticles() {
     enabled: !!user,
     staleTime: 5 * 60 * 1000,
   });
+}
+
+/** Small helper to get author display info for listing cards */
+export function useListingAuthor(pubkey: string): { name: string; picture?: string } {
+  const author = useAuthor(pubkey);
+  const metadata: NostrMetadata | undefined = author.data?.metadata;
+  return {
+    name: metadata?.display_name || metadata?.name || pubkey.slice(0, 12) + '...',
+    picture: metadata?.picture,
+  };
 }

@@ -21,7 +21,6 @@ import {
   Plus,
   ChevronDown,
   Server,
-  Download,
   Sparkles,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -48,7 +47,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { ImageUploader } from '@/components/ImageUploader';
-import { ImportListingDialog } from '@/components/ImportListingDialog';
+import { ListingBrowser } from '@/components/ListingBrowser';
 import { AiGenerateDialog } from '@/components/AiGenerateDialog';
 import { useScheduler } from '@/contexts/SchedulerContext';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -344,22 +343,11 @@ export default function Compose() {
             {post.kind === 'article' && 'Long-form article (NIP-23, kind 30023)'}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {post.status !== 'draft' && (
-            <Badge variant={post.status === 'scheduled' ? 'default' : post.status === 'published' ? 'outline' : 'destructive'}>
-              {post.status}
-            </Badge>
-          )}
-          {/* Import from Nostr — only for listings & articles */}
-          {(post.kind === 'listing' || post.kind === 'article') && (
-            <ImportListingDialog postKind={post.kind} onImport={handleImport}>
-              <Button variant="outline" size="sm" className="gap-2">
-                <Download className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Import</span>
-              </Button>
-            </ImportListingDialog>
-          )}
-        </div>
+        {post.status !== 'draft' && (
+          <Badge variant={post.status === 'scheduled' ? 'default' : post.status === 'published' ? 'outline' : 'destructive'}>
+            {post.status}
+          </Badge>
+        )}
       </div>
 
       {/* Kind selector (only when creating new) */}
@@ -402,6 +390,11 @@ export default function Compose() {
 
         {/* Content Tab */}
         <TabsContent value="content" className="space-y-4">
+          {/* Import Listing Browser — only for listings */}
+          {post.kind === 'listing' && (
+            <ListingBrowser onImport={handleImport} />
+          )}
+
           {/* Listing-specific fields */}
           {post.kind === 'listing' && (
             <Card>
