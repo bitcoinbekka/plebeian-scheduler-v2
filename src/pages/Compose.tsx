@@ -772,7 +772,48 @@ export default function Compose() {
         </CardContent>
       </Card>
 
-      {/* Note preview was moved into the card editor above with edit/preview toggle */}
+      {/* ===== HASHTAG SUGGESTIONS ===== */}
+      {post.postType !== 'long' && (
+        <Card className="bg-muted/20">
+          <CardContent className="p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <Hash className="w-3.5 h-3.5 text-muted-foreground" />
+              <p className="text-xs font-medium text-muted-foreground">Quick hashtags — click to add to your note</p>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                ...(post.postType === 'promo'
+                  ? ['PlebeianMarket', 'Bitcoin', 'Nostr', 'CircularEconomy', 'V4V', 'BuyWithBitcoin', 'NostrMarket', 'Plebchain', 'SupportPlebs', 'PermissionlessCommerce', 'SatsEconomy', 'BitcoinMerchant']
+                  : ['Bitcoin', 'Nostr', 'Plebchain', 'V4V', 'BTC', 'Zap', 'BuildOnNostr', 'StackSats', 'PlebeianMarket', 'CircularEconomy']
+                ),
+                ...(post.importedListing?.categories ?? []).map(c => c.replace(/\s+/g, '')),
+              ].filter((tag, i, arr) => arr.indexOf(tag) === i).map(tag => {
+                const isInContent = post.content.toLowerCase().includes(`#${tag.toLowerCase()}`);
+                return (
+                  <Button
+                    key={tag}
+                    variant={isInContent ? 'secondary' : 'outline'}
+                    size="sm"
+                    className={cn(
+                      'text-xs h-7 px-2.5 gap-1 transition-all',
+                      isInContent && 'opacity-50 cursor-default'
+                    )}
+                    disabled={isInContent}
+                    onClick={() => {
+                      const hashtag = `#${tag}`;
+                      const separator = post.content && !post.content.endsWith('\n') && !post.content.endsWith(' ') ? ' ' : '';
+                      updateField('content', post.content + separator + hashtag);
+                    }}
+                  >
+                    <Hash className="w-2.5 h-2.5" />
+                    {tag}
+                  </Button>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Separator />
 

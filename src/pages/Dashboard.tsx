@@ -1,6 +1,6 @@
 import { useMemo, useRef, useEffect } from 'react';
 import { useSeoMeta } from '@unhead/react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
 import {
   FileText,
@@ -26,6 +26,8 @@ import {
   Globe,
   Copy,
   BookmarkPlus,
+  Megaphone,
+  Trophy,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -40,7 +42,7 @@ import { useBatchEngagement, type PostEngagement } from '@/hooks/usePostEngageme
 import { useToast } from '@/hooks/useToast';
 import { format, formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
-import type { SchedulerPost } from '@/lib/types';
+import { createNewPost, type SchedulerPost } from '@/lib/types';
 
 /** Get a human-friendly title for a post */
 function getPostTitle(post: SchedulerPost): string {
@@ -127,6 +129,7 @@ export default function Dashboard() {
   const { user } = useCurrentUser();
   const { mutateAsync: publishEvent } = useNostrPublish();
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   // Published posts sorted by most recent
   const publishedPosts = useMemo(() =>
@@ -167,6 +170,42 @@ export default function Dashboard() {
     }
     return { reactions, zaps, sats, uniqueZappers: allZappers.size };
   }, [engagementMap]);
+
+  // Post type performance comparison
+  const typePerformance = useMemo(() => {
+    if (!engagementMap || publishedPosts.length < 2) return null;
+
+    const typeStats: Record<string, { count: number; reactions: number; zaps: number; sats: number }> = {};
+
+    for (const post of publishedPosts) {
+      if (!post.publishedEventId) continue;
+      const type = post.postType === 'promo' ? 'Promo Notes' : post.postType === 'long' ? 'Articles' : 'Short Notes';
+      if (!typeStats[type]) typeStats[type] = { count: 0, reactions: 0, zaps: 0, sats: 0 };
+      typeStats[type].count++;
+
+      const eng = engagementMap.get(post.publishedEventId);
+      if (eng) {
+        typeStats[type].reactions += eng.reactionCount;
+        typeStats[type].zaps += eng.zapCount;
+        typeStats[type].sats += eng.totalSats;
+      }
+    }
+
+    const entries = Object.entries(typeStats)
+      .map(([type, data]) => ({
+        type,
+        count: data.count,
+        avgReactions: data.count > 0 ? Math.round((data.reactions / data.count) * 10) / 10 : 0,
+        avgSats: data.count > 0 ? Math.round(data.sats / data.count) : 0,
+        totalReactions: data.reactions,
+        totalSats: data.sats,
+      }))
+      .sort((a, b) => (b.avgReactions + b.avgSats * 0.01) - (a.avgReactions + a.avgSats * 0.01));
+
+    // Only show if there are at least 2 types with posts
+    if (entries.filter(e => e.count > 0).length < 2) return null;
+    return entries;
+  }, [publishedPosts, engagementMap]);
 
   // Engagement notifications — toast when new zaps/reactions arrive
   const prevEngagementRef = useRef<{ reactions: number; sats: number }>({ reactions: 0, sats: 0 });
@@ -231,6 +270,22 @@ export default function Dashboard() {
 
     localStorage.setItem('plebeian-scheduler:templates', JSON.stringify(templates));
     toast({ title: 'Template saved!', description: `"${name}" added to your templates.` });
+  };
+
+  // Duplicate a published post as a new draft for re-promotion
+  const handlePromoteAgain = (post: SchedulerPost) => {
+    if (!user) return;
+    const newPost = createNewPost(user.pubkey, post.postType);
+    newPost.content = post.content;
+    newPost.title = post.title;
+    newPost.summary = post.summary;
+    newPost.headerImage = post.headerImage;
+    newPost.hashtags = [...post.hashtags];
+    newPost.media = [...post.media];
+    newPost.importedListing = post.importedListing ? { ...post.importedListing } : undefined;
+    updatePost(newPost);
+    toast({ title: 'Draft created!', description: 'A copy has been created. Edit and schedule it.' });
+    navigate(`/compose?edit=${newPost.id}`);
   };
 
   return (
@@ -468,6 +523,67 @@ export default function Dashboard() {
               </Card>
             );
           })()}
+
+          {/* Post type performance comparison */}
+          {typePerformance && !engagementLoading && (
+            <Card className="bg-gradient-to-br from-primary/5 to-amber-500/5 border-primary/15">
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <Trophy className="w-4 h-4 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">Post Performance</p>
+                    <p className="text-[10px] text-muted-foreground">Avg engagement by format</p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {typePerformance.map((entry, i) => {
+                    const isTop = i === 0;
+                    return (
+                      <div
+                        key={entry.type}
+                        className={cn(
+                          'flex items-center justify-between p-2 rounded-lg text-xs',
+                          isTop ? 'bg-primary/10 border border-primary/20' : 'bg-muted/50'
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          {isTop && <Trophy className="w-3 h-3 text-primary shrink-0" />}
+                          <span className={cn('font-medium', isTop && 'text-primary')}>
+                            {entry.type}
+                          </span>
+                          <Badge variant="secondary" className="text-[9px] h-4 px-1">
+                            {entry.count} post{entry.count !== 1 ? 's' : ''}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          {entry.avgReactions > 0 && (
+                            <span className="flex items-center gap-0.5 text-rose-500">
+                              <Heart className="w-3 h-3" />
+                              {entry.avgReactions}
+                            </span>
+                          )}
+                          {entry.avgSats > 0 && (
+                            <span className="flex items-center gap-0.5 text-amber-500 font-medium">
+                              <Zap className="w-3 h-3" />
+                              {formatSats(entry.avgSats)}
+                            </span>
+                          )}
+                          {entry.avgReactions === 0 && entry.avgSats === 0 && (
+                            <span className="text-muted-foreground/50 italic">no data yet</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-muted-foreground text-center">
+                  Numbers show average per post
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* RIGHT COLUMN — Published posts with engagement (3/5 width) */}
@@ -608,6 +724,22 @@ export default function Dashboard() {
                                       </Button>
                                     </TooltipTrigger>
                                     <TooltipContent className="text-xs">Save as template</TooltipContent>
+                                  </Tooltip>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="w-7 h-7 text-primary hover:text-primary"
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          handlePromoteAgain(post);
+                                        }}
+                                      >
+                                        <Megaphone className="w-3.5 h-3.5" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent className="text-xs">Promote again</TooltipContent>
                                   </Tooltip>
                                 </>
                               )}
