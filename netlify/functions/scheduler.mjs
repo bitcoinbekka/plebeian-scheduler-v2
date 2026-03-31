@@ -8,9 +8,8 @@
  *
  * Storage: Netlify Blobs via raw HTTP API (zero npm dependencies)
  *
- * The function uses the NETLIFY_BLOBS_CONTEXT env var injected by the
- * Netlify runtime, which contains { apiURL, token, siteID, deployID }.
- * This avoids needing the @netlify/blobs npm package.
+ * Uses Netlify.env for environment variables and the modern
+ * export default (Request, context) => Response function format.
  */
 
 // Default relays to publish to if none specified
@@ -25,20 +24,21 @@ const STORE_NAME = "scheduled-events";
 // ─── Netlify Blobs Raw HTTP Client ────────────────────────────────
 
 /**
- * Parse the Netlify Blobs context from the environment.
+ * Get blob storage credentials from environment.
  * 
- * Tries multiple approaches:
- * 1. NETLIFY_BLOBS_CONTEXT (auto-injected by Netlify build pipeline)
- * 2. Manual env vars: NETLIFY_API_TOKEN + SITE_ID (set by user in dashboard)
- * 
- * Returns { apiURL, token, siteID } or null if not available.
+ * Tries:
+ * 1. NETLIFY_BLOBS_CONTEXT (auto-injected by build pipeline)
+ * 2. NETLIFY_API_TOKEN + SITE_ID (manual setup for API-deployed functions)
  */
 function getBlobsContext() {
-  // Approach 1: Auto-injected context (build-pipeline deploys)
-  const raw = process.env.NETLIFY_BLOBS_CONTEXT;
+  // Approach 1: Auto-injected context
+  const raw = typeof Netlify !== "undefined"
+    ? Netlify.env.get("NETLIFY_BLOBS_CONTEXT")
+    : (typeof process !== "undefined" ? process.env.NETLIFY_BLOBS_CONTEXT : null);
+
   if (raw) {
     try {
-      const decoded = JSON.parse(Buffer.from(raw, "base64").toString("utf-8"));
+      const decoded = JSON.parse(atob(raw));
       console.log("[Blobs] Using NETLIFY_BLOBS_CONTEXT (auto-injected)");
       return {
         apiURL: decoded.apiURL || decoded.edgeURL,
@@ -50,12 +50,18 @@ function getBlobsContext() {
     }
   }
 
-  // Approach 2: Manual token + auto-injected SITE_ID (API-deployed functions)
-  // SITE_ID is a reserved env var that Netlify provides automatically
-  const token = process.env.NETLIFY_API_TOKEN;
-  const siteID = process.env.SITE_ID;
+  // Approach 2: Manual env vars
+  const getEnv = (key) => {
+    if (typeof Netlify !== "undefined") return Netlify.env.get(key);
+    if (typeof process !== "undefined") return process.env[key];
+    return null;
+  };
+
+  const token = getEnv("NETLIFY_API_TOKEN");
+  const siteID = getEnv("SITE_ID");
+
   if (token && siteID) {
-    console.log("[Blobs] Using NETLIFY_API_TOKEN + auto SITE_ID");
+    console.log("[Blobs] Using NETLIFY_API_TOKEN + SITE_ID");
     return {
       apiURL: "https://api.netlify.com/api/v1",
       token,
@@ -63,33 +69,25 @@ function getBlobsContext() {
     };
   }
 
-  // Log what we have for debugging
-  console.error("[Blobs] No blob storage credentials found.");
-  console.error("[Blobs] Set NETLIFY_API_TOKEN in your Netlify site environment variables.");
-  console.error("[Blobs] Env status: NETLIFY_BLOBS_CONTEXT=" + (raw ? "set" : "unset") + ", NETLIFY_API_TOKEN=" + (token ? "set" : "unset") + ", SITE_ID=" + (siteID ? "set" : "unset"));
+  console.error("[Blobs] No credentials found.");
+  console.error("[Blobs] NETLIFY_BLOBS_CONTEXT=" + (raw ? "set" : "unset"));
+  console.error("[Blobs] NETLIFY_API_TOKEN=" + (token ? "set" : "unset"));
+  console.error("[Blobs] SITE_ID=" + (siteID ? "set" : "unset"));
   return null;
 }
 
 /**
  * Build the Blobs API URL for a given store and key.
- *
- * Netlify API format:
- *   https://api.netlify.com/api/v1/blobs/{siteID}/site:{storeName}/{key}
- *
- * Edge URL format:
- *   {edgeURL}/{siteID}/site:{storeName}/{key}
  */
 function blobUrl(ctx, key) {
   const base = ctx.apiURL.replace(/\/$/, "");
 
   if (base.includes("api.netlify.com")) {
-    // Official Netlify API
     return key
       ? `${base}/blobs/${ctx.siteID}/site:${STORE_NAME}/${key}`
       : `${base}/blobs/${ctx.siteID}/site:${STORE_NAME}`;
   }
 
-  // Edge/deploy URL pattern
   return key
     ? `${base}/${ctx.siteID}/site:${STORE_NAME}/${key}`
     : `${base}/${ctx.siteID}/site:${STORE_NAME}`;
@@ -102,7 +100,6 @@ function blobHeaders(ctx) {
   };
 }
 
-/** Store a JSON value in blobs */
 async function blobSet(ctx, key, value) {
   const url = blobUrl(ctx, key);
   const res = await fetch(url, {
@@ -116,7 +113,6 @@ async function blobSet(ctx, key, value) {
   }
 }
 
-/** Get a JSON value from blobs, returns null if not found */
 async function blobGet(ctx, key) {
   const url = blobUrl(ctx, key);
   const res = await fetch(url, {
@@ -131,7 +127,6 @@ async function blobGet(ctx, key) {
   return res.json();
 }
 
-/** Delete a key from blobs */
 async function blobDelete(ctx, key) {
   const url = blobUrl(ctx, key);
   const res = await fetch(url, {
@@ -144,7 +139,6 @@ async function blobDelete(ctx, key) {
   }
 }
 
-/** List all keys in the store. Returns array of { key } objects. */
 async function blobList(ctx) {
   const url = blobUrl(ctx, null);
   const res = await fetch(url, {
@@ -159,16 +153,11 @@ async function blobList(ctx) {
     throw new Error(`Blob LIST failed (${res.status}): ${text}`);
   }
   const data = await res.json();
-  // Response shape: { blobs: [{ key, ... }] }
   return data.blobs || [];
 }
 
 // ─── Nostr Relay Publishing ───────────────────────────────────────
 
-/**
- * Publish a signed Nostr event to a relay via WebSocket.
- * Returns { relay, ok, message/error }.
- */
 async function publishToRelay(relayUrl, signedEvent, timeoutMs = 10000) {
   return new Promise((resolve) => {
     try {
@@ -242,21 +231,35 @@ function jsonResponse(body, status = 200) {
   });
 }
 
-// ─── Main Handler ─────────────────────────────────────────────────
+// ─── Main Handler (modern Netlify format) ─────────────────────────
 
-export async function handler(request) {
+export default async (request, context) => {
   // CORS preflight
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders() });
   }
 
   const ctx = getBlobsContext();
-  if (!ctx) {
-    return jsonResponse({ error: "Blob storage not available — NETLIFY_BLOBS_CONTEXT missing" }, 500);
-  }
 
   const url = new URL(request.url);
   const id = url.searchParams.get("id");
+
+  // ── GET without id: health check (works even without storage) ──
+  if (request.method === "GET" && !id) {
+    return jsonResponse({
+      ok: true,
+      service: "plebeian-scheduler",
+      storage: ctx ? "connected" : "not configured",
+      method: ctx ? "ready" : "none",
+    });
+  }
+
+  // All other operations need storage
+  if (!ctx) {
+    return jsonResponse({
+      error: "Blob storage not configured. Set NETLIFY_API_TOKEN in site environment variables.",
+    }, 500);
+  }
 
   try {
     // ── POST: Schedule a new event ──
@@ -293,7 +296,7 @@ export async function handler(request) {
       });
     }
 
-    // ── GET: Check status ──
+    // ── GET with id: Check status ──
     if (request.method === "GET" && id) {
       const record = await blobGet(ctx, id);
 
@@ -307,16 +310,6 @@ export async function handler(request) {
         publishAt: record.publishAt,
         publishedAt: record.publishedAt,
         results: record.results,
-      });
-    }
-
-    // ── GET without id: health check ──
-    if (request.method === "GET" && !id) {
-      return jsonResponse({
-        ok: true,
-        service: "plebeian-scheduler",
-        storage: ctx ? "connected" : "not configured",
-        method: ctx ? (process.env.NETLIFY_BLOBS_CONTEXT ? "auto" : "manual") : "none",
       });
     }
 
@@ -343,20 +336,16 @@ export async function handler(request) {
     console.error("[Scheduler] Error:", err);
     return jsonResponse({ error: String(err.message || err) }, 500);
   }
-}
+};
 
 // ─── Scheduled Function (Cron) ────────────────────────────────────
 
-/**
- * Runs every minute via Netlify cron.
- * Checks for pending events whose publishAt <= now and publishes them.
- */
 export async function scheduled(event) {
   console.log("[Scheduler Cron] Checking for due events...");
 
   const ctx = getBlobsContext();
   if (!ctx) {
-    console.error("[Scheduler Cron] NETLIFY_BLOBS_CONTEXT not available, skipping.");
+    console.error("[Scheduler Cron] No storage credentials, skipping.");
     return;
   }
 
@@ -369,8 +358,6 @@ export async function scheduled(event) {
     for (const blob of blobs) {
       const record = await blobGet(ctx, blob.key);
       if (!record || record.status !== "pending") continue;
-
-      // Not due yet
       if (record.publishAt > now) continue;
 
       console.log(`[Scheduler Cron] Publishing event ${blob.key} (due at ${new Date(record.publishAt * 1000).toISOString()})...`);
@@ -389,7 +376,6 @@ export async function scheduled(event) {
         console.log(`[Scheduler Cron] Event ${blob.key}: ${record.status}`, JSON.stringify(results));
       } catch (err) {
         console.error(`[Scheduler Cron] Failed to publish ${blob.key}:`, err);
-
         record.status = "failed";
         record.results = [{ error: String(err.message || err) }];
         await blobSet(ctx, blob.key, record);
@@ -402,7 +388,6 @@ export async function scheduled(event) {
   console.log(`[Scheduler Cron] Done. Published ${publishedCount} event(s).`);
 }
 
-// Netlify scheduled function config — run every minute
 export const config = {
   schedule: "* * * * *",
 };
