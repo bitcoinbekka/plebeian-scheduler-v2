@@ -3,11 +3,27 @@ import type { SchedulerPost, Queue, PostStatus } from './types';
 const POSTS_KEY = 'plebeian-scheduler:posts';
 const QUEUES_KEY = 'plebeian-scheduler:queues';
 
+/** Migrate an older post format to the current schema by filling in defaults */
+function migratePost(raw: Record<string, unknown>): SchedulerPost {
+  return {
+    postType: (raw.postType as SchedulerPost['postType']) ?? (raw.importedListing ? 'promo' : 'short'),
+    title: (raw.title as string) ?? '',
+    summary: (raw.summary as string) ?? '',
+    headerImage: (raw.headerImage as string) ?? '',
+    slug: (raw.slug as string) ?? '',
+    hashtags: (raw.hashtags as string[]) ?? [],
+    serverEventId: (raw.serverEventId as string | null) ?? null,
+    ...raw,
+  } as SchedulerPost;
+}
+
 /** Read all posts from localStorage */
 export function loadPosts(): SchedulerPost[] {
   try {
     const data = localStorage.getItem(POSTS_KEY);
-    return data ? JSON.parse(data) : [];
+    if (!data) return [];
+    const raw: Record<string, unknown>[] = JSON.parse(data);
+    return raw.map(migratePost);
   } catch {
     console.warn('Failed to load posts from localStorage');
     return [];

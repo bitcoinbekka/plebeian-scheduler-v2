@@ -18,13 +18,36 @@ function buildImetaTag(img: UploadedImage): string[] {
   return parts;
 }
 
+/** Generate a URL-friendly slug from a title */
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[\s_]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+}
+
 /**
- * Build a kind 1 (note) event — the only event type this scheduler produces.
+ * Build an unsigned event from a SchedulerPost.
  *
- * The content is the promotional note text. Media URLs are appended
- * to the content and accompanied by imeta tags (NIP-92).
+ * - postType 'short' or 'promo' → kind 1 (short text note)
+ * - postType 'long' → kind 30023 (long-form article / NIP-23)
  */
 export function buildEvent(post: SchedulerPost): UnsignedEvent {
+  const now = Math.floor(Date.now() / 1000);
+
+  if (post.postType === 'long') {
+    return buildLongFormEvent(post, now);
+  }
+
+  return buildShortNoteEvent(post, now);
+}
+
+/** Build a kind 1 short text note (for both 'short' and 'promo' post types) */
+function buildShortNoteEvent(post: SchedulerPost, now: number): UnsignedEvent {
   const tags: string[][] = [];
 
   // Append media URLs to content
@@ -49,7 +72,58 @@ export function buildEvent(post: SchedulerPost): UnsignedEvent {
     // For server-scheduled posts, this means created_at reflects when the event
     // was signed, not when it was published. This is intentional: the signature
     // covers created_at and cannot be changed after signing.
-    created_at: Math.floor(Date.now() / 1000),
+    created_at: now,
+  };
+}
+
+/** Build a kind 30023 long-form article event (NIP-23) */
+function buildLongFormEvent(post: SchedulerPost, now: number): UnsignedEvent {
+  const tags: string[][] = [];
+
+  // d-tag (identifier / slug) — required for addressable events
+  const dTag = post.slug || slugify(post.title) || post.id;
+  tags.push(['d', dTag]);
+
+  // Title — recommended
+  if (post.title) {
+    tags.push(['title', post.title]);
+  }
+
+  // Summary — recommended
+  if (post.summary) {
+    tags.push(['summary', post.summary]);
+  }
+
+  // Header image
+  if (post.headerImage) {
+    tags.push(['image', post.headerImage]);
+  }
+
+  // Published_at — original publication timestamp
+  tags.push(['published_at', String(now)]);
+
+  // Hashtags as t tags
+  for (const tag of post.hashtags) {
+    if (tag.trim()) {
+      tags.push(['t', tag.trim().toLowerCase()]);
+    }
+  }
+
+  // Media attachments as imeta tags
+  for (const img of post.media) {
+    tags.push(buildImetaTag(img));
+  }
+
+  // NIP-40 expiration
+  if (post.expiresAt) {
+    tags.push(['expiration', String(post.expiresAt)]);
+  }
+
+  return {
+    kind: 30023,
+    content: post.content, // Markdown content
+    tags,
+    created_at: now,
   };
 }
 

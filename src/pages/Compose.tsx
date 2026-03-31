@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { useSeoMeta } from '@unhead/react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
@@ -16,13 +16,18 @@ import {
   ShoppingBag,
   Info,
   ExternalLink,
+  MessageSquare,
+  FileText,
+  Upload,
+  Hash,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Separator } from '@/components/ui/separator';
@@ -43,16 +48,24 @@ import { AiGenerateDialog } from '@/components/AiGenerateDialog';
 import { useScheduler } from '@/contexts/SchedulerContext';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
+import { useUploadFile } from '@/hooks/useUploadFile';
 import { useToast } from '@/hooks/useToast';
 import { buildEvent } from '@/lib/eventBuilder';
 import { scheduleEvent } from '@/lib/schedulerApi';
-import { createNewPost, type SchedulerPost, type ImportedListing, type UploadedImage } from '@/lib/types';
+import { createNewPost, type SchedulerPost, type PostType, type ImportedListing, type UploadedImage } from '@/lib/types';
+import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+
+const POST_TYPES: { value: PostType; label: string; icon: typeof MessageSquare; description: string; kind: string }[] = [
+  { value: 'short', label: 'Short Note', icon: MessageSquare, description: 'Quick update, announcement, or thought', kind: 'kind 1' },
+  { value: 'long', label: 'Long-form Article', icon: FileText, description: 'Newsletter, blog post, or in-depth content', kind: 'kind 30023' },
+  { value: 'promo', label: 'Promo Note', icon: ShoppingBag, description: 'Promote a product from your marketplace listing', kind: 'kind 1' },
+];
 
 export default function Compose() {
   useSeoMeta({
     title: 'Compose - Plebeian Scheduler',
-    description: 'Craft and schedule promotional Nostr posts for your marketplace listings.',
+    description: 'Craft and schedule Nostr posts — short notes, long-form articles, and product promotions.',
   });
 
   const [searchParams] = useSearchParams();
@@ -61,8 +74,11 @@ export default function Compose() {
   const { user } = useCurrentUser();
   const { updatePost, removePost, posts } = useScheduler();
   const { mutateAsync: publishEvent, isPending: isPublishing } = useNostrPublish();
+  const { mutateAsync: uploadFile } = useUploadFile();
 
   const editId = searchParams.get('edit');
+  const headerImageInputRef = useRef<HTMLInputElement>(null);
+  const [headerImageUploading, setHeaderImageUploading] = useState(false);
 
   const existingPost = useMemo(() => {
     if (editId) return posts.find(p => p.id === editId);
@@ -85,9 +101,15 @@ export default function Compose() {
   });
   const [showScheduler, setShowScheduler] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  const [hashtagInput, setHashtagInput] = useState('');
 
   const updateField = useCallback(<K extends keyof SchedulerPost>(field: K, value: SchedulerPost[K]) => {
     setPost(prev => ({ ...prev, [field]: value }));
+  }, []);
+
+  const setPostType = useCallback((postType: PostType) => {
+    setPost(prev => ({ ...prev, postType }));
   }, []);
 
   // Save as draft
@@ -170,7 +192,7 @@ export default function Compose() {
     if (result?.ok) {
       toast({
         title: 'Post scheduled!',
-        description: `Your note will publish on ${format(scheduledDate, 'MMM d, yyyy')} at ${format(scheduledDate, 'h:mm a')}. You can close this tab.`,
+        description: `Will publish on ${format(scheduledDate, 'MMM d, yyyy')} at ${format(scheduledDate, 'h:mm a')}. You can close this tab.`,
       });
     } else {
       toast({
@@ -193,7 +215,7 @@ export default function Compose() {
     if (result?.ok) {
       toast({
         title: `Scheduled in ${label}`,
-        description: `Your note will publish at ${format(new Date(scheduledAt * 1000), 'h:mm a')}. You can close this tab.`,
+        description: `Will publish at ${format(new Date(scheduledAt * 1000), 'h:mm a')}. You can close this tab.`,
       });
     } else {
       toast({
@@ -205,7 +227,7 @@ export default function Compose() {
     navigate('/');
   }, [user, submitSchedule, toast, navigate]);
 
-  // Publish now — direct publish to relays (no DVM)
+  // Publish now — direct publish to relays
   const handlePublishNow = useCallback(async () => {
     if (!user) return;
 
@@ -228,7 +250,7 @@ export default function Compose() {
       };
       updatePost(updated);
       setPersisted(true);
-      toast({ title: 'Published!', description: 'Your promo note is now live on Nostr.' });
+      toast({ title: 'Published!', description: `Your ${post.postType === 'long' ? 'article' : 'note'} is now live on Nostr.` });
       navigate('/');
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
@@ -249,11 +271,12 @@ export default function Compose() {
   const handleImport = useCallback((data: { content: string; media: UploadedImage[]; importedListing: ImportedListing }) => {
     setPost(prev => ({
       ...prev,
+      postType: 'promo' as PostType,
       content: data.content,
       media: data.media,
       importedListing: data.importedListing,
     }));
-    toast({ title: 'Listing imported!', description: 'A promo note has been drafted from your listing. Edit it to your liking.' });
+    toast({ title: 'Listing imported!', description: 'A promo note has been drafted. Edit it to your liking.' });
   }, [toast]);
 
   // Insert AI-generated content
@@ -262,8 +285,37 @@ export default function Compose() {
       ...prev,
       content: prev.content ? prev.content + '\n\n' + text : text,
     }));
-    toast({ title: 'Content inserted', description: 'AI-generated text added to your note.' });
+    toast({ title: 'Content inserted', description: 'AI-generated text added.' });
   }, [toast]);
+
+  // Upload header image for articles
+  const handleHeaderImageUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setHeaderImageUploading(true);
+    try {
+      const tags = await uploadFile(file);
+      const url = tags.find(([name]) => name === 'url')?.[1] ?? '';
+      if (url) {
+        updateField('headerImage', url);
+      }
+    } catch (error) {
+      console.error('Failed to upload header image:', error);
+      toast({ title: 'Upload failed', description: 'Could not upload header image.', variant: 'destructive' });
+    } finally {
+      setHeaderImageUploading(false);
+      if (headerImageInputRef.current) headerImageInputRef.current.value = '';
+    }
+  }, [uploadFile, updateField, toast]);
+
+  // Add hashtag
+  const addHashtag = useCallback(() => {
+    const tag = hashtagInput.trim().toLowerCase().replace(/^#/, '');
+    if (tag && !post.hashtags.includes(tag)) {
+      updateField('hashtags', [...post.hashtags, tag]);
+    }
+    setHashtagInput('');
+  }, [hashtagInput, post.hashtags, updateField]);
 
   if (!user) {
     return (
@@ -272,6 +324,8 @@ export default function Compose() {
       </div>
     );
   }
+
+  const currentType = POST_TYPES.find(t => t.value === post.postType) ?? POST_TYPES[0];
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
@@ -282,10 +336,10 @@ export default function Compose() {
         </Button>
         <div className="flex-1">
           <h1 className="font-display text-2xl font-bold">
-            {editId ? 'Edit Promo Note' : 'Compose Promo Note'}
+            {editId ? 'Edit Post' : 'Compose'}
           </h1>
           <p className="text-sm text-muted-foreground">
-            Craft a promotional note to market your products on Nostr
+            Create and schedule content for your Nostr audience
           </p>
         </div>
         {post.status !== 'draft' && (
@@ -295,138 +349,342 @@ export default function Compose() {
         )}
       </div>
 
-      <Tabs defaultValue="content" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="content">Content</TabsTrigger>
-          <TabsTrigger value="media">
-            <ImageIcon className="w-3.5 h-3.5 mr-1.5" /> Media {post.media.length > 0 && `(${post.media.length})`}
-          </TabsTrigger>
-        </TabsList>
+      {/* Post Type Selector */}
+      <div className="grid grid-cols-3 gap-2">
+        {POST_TYPES.map(type => {
+          const Icon = type.icon;
+          const isActive = post.postType === type.value;
+          return (
+            <button
+              key={type.value}
+              type="button"
+              onClick={() => setPostType(type.value)}
+              className={cn(
+                'relative flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all duration-200 text-center',
+                isActive
+                  ? 'border-primary bg-primary/5 shadow-sm'
+                  : 'border-border hover:border-primary/30 hover:bg-secondary/50'
+              )}
+            >
+              <div className={cn(
+                'w-10 h-10 rounded-lg flex items-center justify-center transition-colors',
+                isActive ? 'bg-primary/15' : 'bg-muted'
+              )}>
+                <Icon className={cn('w-5 h-5', isActive ? 'text-primary' : 'text-muted-foreground')} />
+              </div>
+              <div>
+                <p className={cn('text-sm font-medium', isActive && 'text-primary')}>{type.label}</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight hidden sm:block">{type.description}</p>
+              </div>
+              <Badge variant="secondary" className="text-[9px] px-1.5 py-0">{type.kind}</Badge>
+            </button>
+          );
+        })}
+      </div>
 
-        {/* Content Tab */}
-        <TabsContent value="content" className="space-y-4">
-          {/* Import Listing Browser */}
-          <ListingBrowser onImport={handleImport} />
+      {/* Promo: Listing Browser */}
+      {post.postType === 'promo' && (
+        <ListingBrowser onImport={handleImport} />
+      )}
 
-          {/* Imported listing reference */}
-          {post.importedListing && (
-            <Card className="bg-primary/5 border-primary/20">
-              <CardContent className="p-3 space-y-2">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
-                    <ShoppingBag className="w-4 h-4 text-primary" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">
-                      Promoting: {post.importedListing.title}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {post.importedListing.price && `${post.importedListing.price} ${post.importedListing.currency}`}
-                      {post.importedListing.location && ` · ${post.importedListing.location}`}
-                    </p>
-                  </div>
+      {/* Imported listing reference */}
+      {post.importedListing && (
+        <Card className="bg-primary/5 border-primary/20">
+          <CardContent className="p-3 space-y-2">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+                <ShoppingBag className="w-4 h-4 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">
+                  Promoting: {post.importedListing.title}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {post.importedListing.price && `${post.importedListing.price} ${post.importedListing.currency}`}
+                  {post.importedListing.location && ` · ${post.importedListing.location}`}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="w-7 h-7 shrink-0"
+                onClick={() => setPost(prev => {
+                  const { importedListing: _, ...rest } = prev;
+                  return rest as SchedulerPost;
+                })}
+              >
+                <X className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+            {post.importedListing.marketplaceUrl && (
+              <a
+                href={post.importedListing.marketplaceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-xs text-primary hover:underline ml-11"
+              >
+                <ExternalLink className="w-3 h-3" />
+                View on Plebeian Market
+              </a>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ===== LONG-FORM ARTICLE FIELDS ===== */}
+      {post.postType === 'long' && (
+        <div className="space-y-4">
+          {/* Title */}
+          <div>
+            <Input
+              placeholder="Article title"
+              value={post.title}
+              onChange={e => updateField('title', e.target.value)}
+              className="text-xl font-bold font-display border-0 border-b rounded-none px-0 focus-visible:ring-0 focus-visible:border-primary placeholder:font-normal placeholder:text-muted-foreground/50"
+            />
+          </div>
+
+          {/* Summary */}
+          <div>
+            <Input
+              placeholder="Brief summary or subtitle (shown in previews)"
+              value={post.summary}
+              onChange={e => updateField('summary', e.target.value)}
+              className="text-sm border-0 border-b rounded-none px-0 focus-visible:ring-0 focus-visible:border-primary placeholder:text-muted-foreground/50"
+            />
+          </div>
+
+          {/* Header Image */}
+          <div>
+            {post.headerImage ? (
+              <div className="relative rounded-xl overflow-hidden border group">
+                <img src={post.headerImage} alt="Header" className="w-full h-48 object-cover" />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center gap-2">
                   <Button
-                    variant="ghost"
-                    size="icon"
-                    className="w-7 h-7 shrink-0"
-                    onClick={() => setPost(prev => {
-                      const { importedListing: _, ...rest } = prev;
-                      return rest as SchedulerPost;
-                    })}
+                    variant="secondary"
+                    size="sm"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={() => headerImageInputRef.current?.click()}
+                  >
+                    Replace
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={() => updateField('headerImage', '')}
                   >
                     <X className="w-3.5 h-3.5" />
                   </Button>
                 </div>
-                {post.importedListing.marketplaceUrl && (
-                  <a
-                    href={post.importedListing.marketplaceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 text-xs text-primary hover:underline ml-11"
-                  >
-                    <ExternalLink className="w-3 h-3" />
-                    View on Plebeian Market
-                  </a>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="w-full border-2 border-dashed rounded-xl p-6 text-center hover:border-primary/50 hover:bg-primary/5 transition-all group"
+                onClick={() => headerImageInputRef.current?.click()}
+                disabled={headerImageUploading}
+              >
+                {headerImageUploading ? (
+                  <Loader2 className="w-6 h-6 mx-auto animate-spin text-primary" />
+                ) : (
+                  <>
+                    <Upload className="w-6 h-6 mx-auto text-muted-foreground group-hover:text-primary transition-colors" />
+                    <p className="text-sm text-muted-foreground mt-2">Add a header image</p>
+                  </>
                 )}
-              </CardContent>
-            </Card>
+              </button>
+            )}
+            <input
+              ref={headerImageInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleHeaderImageUpload}
+            />
+          </div>
+
+          {/* Hashtags */}
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Add hashtags (e.g. bitcoin, farming)"
+                  value={hashtagInput}
+                  onChange={e => setHashtagInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addHashtag(); } }}
+                  className="pl-9 text-sm"
+                />
+              </div>
+              <Button variant="outline" size="sm" onClick={addHashtag} disabled={!hashtagInput.trim()}>
+                Add
+              </Button>
+            </div>
+            {post.hashtags.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {post.hashtags.map(tag => (
+                  <Badge key={tag} variant="secondary" className="gap-1 text-xs pr-1">
+                    #{tag}
+                    <button
+                      type="button"
+                      onClick={() => updateField('hashtags', post.hashtags.filter(t => t !== tag))}
+                      className="hover:text-destructive transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ===== CONTENT EDITOR (all post types) ===== */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">
+              {post.postType === 'long' ? 'Article Content' : 'Your Note'}
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              {post.postType === 'long' && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5 text-xs"
+                  onClick={() => setShowPreview(!showPreview)}
+                >
+                  {showPreview ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  {showPreview ? 'Edit' : 'Preview'}
+                </Button>
+              )}
+              <AiGenerateDialog
+                currentContent={post.content}
+                listingTitle={post.importedListing?.title || (post.postType === 'long' ? post.title : undefined)}
+                listingContext={
+                  post.importedListing
+                    ? [
+                        post.importedListing.summary && `Summary: ${post.importedListing.summary}`,
+                        post.importedListing.price && `Price: ${post.importedListing.price} ${post.importedListing.currency}`,
+                        post.importedListing.location && `Location: ${post.importedListing.location}`,
+                        post.importedListing.categories.length > 0 && `Categories: ${post.importedListing.categories.join(', ')}`,
+                      ].filter(Boolean).join('. ')
+                    : undefined
+                }
+                onInsert={handleAiInsert}
+              >
+                <Button variant="outline" size="sm" className="gap-2 text-xs">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  AI Generate
+                </Button>
+              </AiGenerateDialog>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {showPreview && post.postType === 'long' ? (
+            /* Markdown preview for articles */
+            <div className="prose prose-sm dark:prose-invert max-w-none min-h-[200px] p-4 rounded-lg border bg-secondary/30">
+              {post.content ? (
+                <div className="whitespace-pre-wrap">{post.content}</div>
+              ) : (
+                <p className="text-muted-foreground italic">Nothing to preview yet...</p>
+              )}
+            </div>
+          ) : (
+            <Textarea
+              placeholder={
+                post.postType === 'long'
+                  ? 'Write your article in Markdown...\n\n## Section Heading\n\nYour content here. Use **bold**, *italic*, [links](url), and more.'
+                  : post.postType === 'promo'
+                    ? "Write your promotional note... e.g. 'Check out my fresh Christmas Cakes! 50,000 sats 🎄'"
+                    : "What's on your mind? Share an update, announcement, or thought..."
+              }
+              value={post.content}
+              onChange={e => updateField('content', e.target.value)}
+              className={cn(
+                'text-sm font-mono',
+                post.postType === 'long' ? 'min-h-[400px]' : 'min-h-[160px]',
+              )}
+              rows={post.postType === 'long' ? 20 : 8}
+            />
           )}
 
-          {/* Content editor */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base">Your Note</CardTitle>
-                <AiGenerateDialog
-                  currentContent={post.content}
-                  listingTitle={post.importedListing?.title}
-                  listingContext={
-                    post.importedListing
-                      ? [
-                          post.importedListing.summary && `Summary: ${post.importedListing.summary}`,
-                          post.importedListing.price && `Price: ${post.importedListing.price} ${post.importedListing.currency}`,
-                          post.importedListing.location && `Location: ${post.importedListing.location}`,
-                          post.importedListing.categories.length > 0 && `Categories: ${post.importedListing.categories.join(', ')}`,
-                        ].filter(Boolean).join('. ')
-                      : undefined
-                  }
-                  onInsert={handleAiInsert}
-                >
-                  <Button variant="outline" size="sm" className="gap-2 text-xs">
-                    <Sparkles className="w-3.5 h-3.5" />
-                    AI Generate
-                  </Button>
-                </AiGenerateDialog>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <Textarea
-                placeholder="Write your promotional note... e.g. 'Check out my fresh Christmas Cakes! 50,000 sats 🎄'"
-                value={post.content}
-                onChange={e => updateField('content', e.target.value)}
-                className="min-h-[200px] text-sm"
-                rows={10}
-              />
-              <div className="flex items-center justify-between mt-2">
-                <p className="text-xs text-muted-foreground">
-                  {post.content.length} characters
-                </p>
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Info className="w-3 h-3" />
-                  This will be published as a kind 1 note
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">
+              {post.content.length} characters
+            </p>
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Info className="w-3 h-3" />
+              {post.postType === 'long' ? 'Publishes as kind 30023 (NIP-23 article)' : 'Publishes as kind 1 note'}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
-        {/* Media Tab */}
-        <TabsContent value="media" className="space-y-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <ImageIcon className="w-4 h-4" />
-                Media Attachments
-              </CardTitle>
-              {post.media.length > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  Images will be appended to your note and tagged with NIP-92 metadata
-                </p>
-              )}
-            </CardHeader>
-            <CardContent>
-              <ImageUploader
-                images={post.media}
-                onImagesChange={imgs => updateField('media', imgs)}
-              />
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      {/* ===== MEDIA / IMAGE ATTACHMENTS ===== */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <ImageIcon className="w-4 h-4" />
+            Media {post.media.length > 0 && <Badge variant="secondary" className="text-xs">{post.media.length}</Badge>}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ImageUploader
+            images={post.media}
+            onImagesChange={imgs => updateField('media', imgs)}
+          />
+        </CardContent>
+      </Card>
+
+      {/* ===== INLINE PREVIEW (images beneath the content) ===== */}
+      {post.media.length > 0 && (
+        <Card className="bg-secondary/30 border-dashed">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
+              <Eye className="w-3.5 h-3.5" />
+              Post Preview
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {/* Content preview */}
+            <div className="text-sm whitespace-pre-wrap break-words">
+              {post.content || <span className="text-muted-foreground italic">No content yet...</span>}
+            </div>
+
+            {/* Image gallery preview */}
+            <div className={cn(
+              'grid gap-2',
+              post.media.length === 1 && 'grid-cols-1',
+              post.media.length === 2 && 'grid-cols-2',
+              post.media.length >= 3 && 'grid-cols-2 sm:grid-cols-3',
+            )}>
+              {post.media.map((img, idx) => (
+                <div
+                  key={img.url}
+                  className={cn(
+                    'relative rounded-lg overflow-hidden border bg-muted',
+                    post.media.length === 1 ? 'aspect-video' : 'aspect-square',
+                  )}
+                >
+                  <img
+                    src={img.url}
+                    alt={img.alt || `Image ${idx + 1}`}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Separator />
 
-      {/* Action Bar — Schedule is the hero, Publish Now is secondary */}
+      {/* ===== ACTION BAR ===== */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pb-8">
         <div className="flex-1 flex flex-wrap gap-2">
           <Button
@@ -482,7 +740,7 @@ export default function Compose() {
             <PopoverTrigger asChild>
               <Button className="gap-2 shadow-lg shadow-primary/20 hover:shadow-primary/30">
                 <CalendarClock className="w-4 h-4" />
-                Schedule Post
+                Schedule
                 <ChevronDown className="w-3 h-3" />
               </Button>
             </PopoverTrigger>
@@ -493,7 +751,7 @@ export default function Compose() {
                   <p className="text-xs font-medium text-muted-foreground">Quick schedule</p>
                   <div className="grid grid-cols-2 gap-1.5">
                     <Button size="sm" variant="secondary" className="text-xs h-9 gap-1.5" onClick={() => handleQuickSchedule(300, '5 minutes')}>
-                      <Clock className="w-3 h-3" /> 5 minutes
+                      <Clock className="w-3 h-3" /> 5 min
                     </Button>
                     <Button size="sm" variant="secondary" className="text-xs h-9 gap-1.5" onClick={() => handleQuickSchedule(3600, '1 hour')}>
                       <Clock className="w-3 h-3" /> 1 hour

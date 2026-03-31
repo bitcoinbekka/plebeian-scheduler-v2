@@ -14,6 +14,7 @@ import {
   ShoppingBag,
   Server,
   Monitor,
+  Newspaper,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -31,8 +32,9 @@ const STAT_CARDS = [
   { key: 'failed' as const, label: 'Failed', icon: AlertTriangle, color: 'text-destructive', bg: 'bg-destructive/10' },
 ];
 
-/** Get a human-friendly title for a promo note */
+/** Get a human-friendly title for a post */
 function getPostTitle(post: SchedulerPost): string {
+  if (post.postType === 'long' && post.title) return post.title;
   if (post.importedListing?.title) return post.importedListing.title;
   return post.content.slice(0, 60) || 'Empty note';
 }
@@ -129,8 +131,8 @@ export default function Dashboard() {
               </div>
             ) : (
               upcoming.map(post => {
-                const hasListing = !!post.importedListing;
                 const isServer = !!post.serverEventId;
+                const PostIcon = post.postType === 'long' ? Newspaper : post.postType === 'promo' ? ShoppingBag : MessageSquare;
                 return (
                   <Link
                     key={post.id}
@@ -138,11 +140,7 @@ export default function Dashboard() {
                     className="flex items-center gap-3 p-3 rounded-lg hover:bg-secondary/50 transition-colors group"
                   >
                     <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
-                      {hasListing ? (
-                        <ShoppingBag className="w-4 h-4 text-primary" />
-                      ) : (
-                        <MessageSquare className="w-4 h-4 text-primary" />
-                      )}
+                      <PostIcon className="w-4 h-4 text-primary" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">
@@ -185,18 +183,14 @@ export default function Dashboard() {
             ) : (
               recent.map(post => {
                 const isPublished = post.status === 'published';
-                const hasListing = !!post.importedListing;
+                const PostIcon = post.postType === 'long' ? Newspaper : post.postType === 'promo' ? ShoppingBag : MessageSquare;
                 return (
                   <div
                     key={post.id}
                     className="flex items-center gap-3 p-3 rounded-lg"
                   >
                     <div className={`w-8 h-8 rounded-md flex items-center justify-center shrink-0 ${isPublished ? 'bg-emerald-500/10' : 'bg-destructive/10'}`}>
-                      {hasListing ? (
-                        <ShoppingBag className={`w-4 h-4 ${isPublished ? 'text-emerald-500' : 'text-destructive'}`} />
-                      ) : (
-                        <MessageSquare className={`w-4 h-4 ${isPublished ? 'text-emerald-500' : 'text-destructive'}`} />
-                      )}
+                      <PostIcon className={`w-4 h-4 ${isPublished ? 'text-emerald-500' : 'text-destructive'}`} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">
@@ -243,7 +237,33 @@ export default function Dashboard() {
 
       {/* Quick actions for empty state */}
       {posts.length === 0 && user && (
-        <div className="grid sm:grid-cols-2 gap-4 animate-fade-in">
+        <div className="grid sm:grid-cols-3 gap-4 animate-fade-in">
+          <Link to="/compose">
+            <Card className="hover:shadow-lg hover:border-blue-500/20 transition-all duration-300 cursor-pointer group h-full">
+              <CardContent className="p-6 text-center">
+                <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
+                  <MessageSquare className="w-6 h-6 text-blue-500" />
+                </div>
+                <h3 className="font-semibold text-sm">Short Note</h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Quick update, announcement, or thought
+                </p>
+              </CardContent>
+            </Card>
+          </Link>
+          <Link to="/compose">
+            <Card className="hover:shadow-lg hover:border-violet-500/20 transition-all duration-300 cursor-pointer group h-full">
+              <CardContent className="p-6 text-center">
+                <div className="w-12 h-12 rounded-xl bg-violet-500/10 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
+                  <Newspaper className="w-6 h-6 text-violet-500" />
+                </div>
+                <h3 className="font-semibold text-sm">Newsletter / Article</h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Write a long-form post like a blog or newsletter
+                </p>
+              </CardContent>
+            </Card>
+          </Link>
           <Link to="/compose">
             <Card className="hover:shadow-lg hover:border-primary/20 transition-all duration-300 cursor-pointer group h-full">
               <CardContent className="p-6 text-center">
@@ -252,20 +272,7 @@ export default function Dashboard() {
                 </div>
                 <h3 className="font-semibold text-sm">Promote a Listing</h3>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Import a Plebeian Market listing and craft a promo note
-                </p>
-              </CardContent>
-            </Card>
-          </Link>
-          <Link to="/compose">
-            <Card className="hover:shadow-lg hover:border-blue-500/20 transition-all duration-300 cursor-pointer group h-full">
-              <CardContent className="p-6 text-center">
-                <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
-                  <MessageSquare className="w-6 h-6 text-blue-500" />
-                </div>
-                <h3 className="font-semibold text-sm">Write a Note</h3>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Schedule a promotional note or announcement
+                  Import a Plebeian Market listing and promo it
                 </p>
               </CardContent>
             </Card>

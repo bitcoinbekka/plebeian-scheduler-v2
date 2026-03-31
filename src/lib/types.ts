@@ -4,6 +4,9 @@ export const PLEBEIAN_MARKET_URL = 'https://plebeian.market';
 /** Status of a scheduled item in the pipeline */
 export type PostStatus = 'draft' | 'queued' | 'scheduled' | 'published' | 'failed';
 
+/** The type of post being composed */
+export type PostType = 'short' | 'long' | 'promo';
+
 /** An uploaded image with metadata for NIP-92 imeta tags */
 export interface UploadedImage {
   url: string;
@@ -43,14 +46,26 @@ export interface ImportedListing {
   authorPubkey?: string;
 }
 
-/** A draft/scheduled/queued promotional note in the system */
+/** A draft/scheduled/queued post in the system */
 export interface SchedulerPost {
   /** Unique local ID (UUID) */
   id: string;
   /** Current status in the pipeline */
   status: PostStatus;
-  /** The note content (what gets published as kind 1) */
+  /** Post type: short note (kind 1), long-form article (kind 30023), or promo note (kind 1 + listing) */
+  postType: PostType;
+  /** The note/article content */
   content: string;
+  /** Article title (for long-form posts, kind 30023) */
+  title: string;
+  /** Article summary (for long-form posts) */
+  summary: string;
+  /** Article header image URL (for long-form posts) */
+  headerImage: string;
+  /** Article slug / d-tag identifier (for long-form posts) */
+  slug: string;
+  /** Article hashtags (for long-form posts) */
+  hashtags: string[];
   /** Which npub (hex) this should be published as */
   authorPubkey: string;
   /** Scheduled publish time (unix timestamp in seconds), null if draft */
@@ -90,13 +105,19 @@ export interface Queue {
   createdAt: number;
 }
 
-/** Create a new empty post (always a kind 1 promo note) */
-export function createNewPost(authorPubkey: string): SchedulerPost {
+/** Create a new empty post */
+export function createNewPost(authorPubkey: string, postType: PostType = 'short'): SchedulerPost {
   const now = Math.floor(Date.now() / 1000);
   return {
     id: crypto.randomUUID(),
     status: 'draft',
+    postType,
     content: '',
+    title: '',
+    summary: '',
+    headerImage: '',
+    slug: '',
+    hashtags: [],
     authorPubkey,
     scheduledAt: null,
     createdAt: now,

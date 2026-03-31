@@ -49,9 +49,8 @@ function buildNaddr(listing: ExistingListing): string {
 
 /** Build the Plebeian Market web URL for a listing */
 function buildMarketplaceUrl(listing: ExistingListing): string {
-  const naddr = buildNaddr(listing);
-  if (!naddr) return '';
-  return `${PLEBEIAN_MARKET_URL}/p/${naddr}`;
+  // Plebeian Market uses /products/{event_id} for product pages
+  return `${PLEBEIAN_MARKET_URL}/products/${listing.event.id}`;
 }
 
 /** Build a promo note content string from listing data */
@@ -238,7 +237,7 @@ export function ListingBrowser({ onImport }: ListingBrowserProps) {
     const naddr = buildNaddr(listing);
     const importedListing: ImportedListing = {
       naddr,
-      marketplaceUrl: naddr ? `${PLEBEIAN_MARKET_URL}/p/${naddr}` : undefined,
+      marketplaceUrl: `${PLEBEIAN_MARKET_URL}/products/${listing.event.id}`,
       title: listing.title,
       summary: listing.summary,
       price: listing.price,
