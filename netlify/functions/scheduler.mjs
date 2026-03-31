@@ -31,14 +31,12 @@ const STORE_NAME = "scheduled-events";
  * 2. NETLIFY_API_TOKEN + SITE_ID (manual setup for API-deployed functions)
  */
 function getBlobsContext() {
-  // Approach 1: Auto-injected context
-  const raw = typeof Netlify !== "undefined"
-    ? Netlify.env.get("NETLIFY_BLOBS_CONTEXT")
-    : (typeof process !== "undefined" ? process.env.NETLIFY_BLOBS_CONTEXT : null);
+  // Approach 1: Auto-injected context (build-pipeline deploys)
+  const raw = process.env.NETLIFY_BLOBS_CONTEXT;
 
   if (raw) {
     try {
-      const decoded = JSON.parse(atob(raw));
+      const decoded = JSON.parse(Buffer.from(raw, "base64").toString("utf-8"));
       console.log("[Blobs] Using NETLIFY_BLOBS_CONTEXT (auto-injected)");
       return {
         apiURL: decoded.apiURL || decoded.edgeURL,
@@ -50,15 +48,9 @@ function getBlobsContext() {
     }
   }
 
-  // Approach 2: Manual env vars
-  const getEnv = (key) => {
-    if (typeof Netlify !== "undefined") return Netlify.env.get(key);
-    if (typeof process !== "undefined") return process.env[key];
-    return null;
-  };
-
-  const token = getEnv("NETLIFY_API_TOKEN");
-  const siteID = getEnv("SITE_ID");
+  // Approach 2: Manual token + reserved SITE_ID (Lambda/API-deployed functions)
+  const token = process.env.NETLIFY_API_TOKEN;
+  const siteID = process.env.SITE_ID;
 
   if (token && siteID) {
     console.log("[Blobs] Using NETLIFY_API_TOKEN + SITE_ID");
@@ -224,54 +216,62 @@ function corsHeaders() {
   };
 }
 
-function jsonResponse(body, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json", ...corsHeaders() },
-  });
+/**
+ * Lambda-compatible response helper.
+ * Returns { statusCode, headers, body } format.
+ */
+function lambdaResponse(body, statusCode = 200) {
+  return {
+    statusCode,
+    headers: {
+      "Content-Type": "application/json",
+      ...corsHeaders(),
+    },
+    body: JSON.stringify(body),
+  };
 }
 
-// ─── Main Handler (modern Netlify format) ─────────────────────────
+// ─── Main Handler (Lambda compatibility format for API deploys) ───
 
-export default async (request, context) => {
+export const handler = async (event, context) => {
+  const method = event.httpMethod;
+
   // CORS preflight
-  if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders() });
+  if (method === "OPTIONS") {
+    return { statusCode: 204, headers: corsHeaders(), body: "" };
   }
 
-  const ctx = getBlobsContext();
-
-  const url = new URL(request.url);
-  const id = url.searchParams.get("id");
+  const blobCtx = getBlobsContext();
+  const id = event.queryStringParameters?.id || null;
 
   // ── GET without id: health check (works even without storage) ──
-  if (request.method === "GET" && !id) {
-    return jsonResponse({
+  if (method === "GET" && !id) {
+    return lambdaResponse({
       ok: true,
       service: "plebeian-scheduler",
-      storage: ctx ? "connected" : "not configured",
-      method: ctx ? "ready" : "none",
+      storage: blobCtx ? "connected" : "not configured",
+      method: blobCtx ? "ready" : "none",
     });
   }
 
   // All other operations need storage
-  if (!ctx) {
-    return jsonResponse({
+  if (!blobCtx) {
+    return lambdaResponse({
       error: "Blob storage not configured. Set NETLIFY_API_TOKEN in site environment variables.",
     }, 500);
   }
 
   try {
     // ── POST: Schedule a new event ──
-    if (request.method === "POST") {
-      const body = await request.json();
+    if (method === "POST") {
+      const body = JSON.parse(event.body || "{}");
       const { signedEvent, publishAt, relays } = body;
 
       if (!signedEvent || !signedEvent.id || !signedEvent.sig || !signedEvent.pubkey) {
-        return jsonResponse({ error: "Missing or invalid signedEvent" }, 400);
+        return lambdaResponse({ error: "Missing or invalid signedEvent" }, 400);
       }
       if (!publishAt || typeof publishAt !== "number") {
-        return jsonResponse({ error: "Missing or invalid publishAt timestamp" }, 400);
+        return lambdaResponse({ error: "Missing or invalid publishAt timestamp" }, 400);
       }
 
       const record = {
@@ -284,11 +284,11 @@ export default async (request, context) => {
         results: null,
       };
 
-      await blobSet(ctx, signedEvent.id, record);
+      await blobSet(blobCtx, signedEvent.id, record);
 
       console.log(`[Scheduler] Stored event ${signedEvent.id} for publish at ${new Date(publishAt * 1000).toISOString()}`);
 
-      return jsonResponse({
+      return lambdaResponse({
         ok: true,
         id: signedEvent.id,
         publishAt,
@@ -297,14 +297,14 @@ export default async (request, context) => {
     }
 
     // ── GET with id: Check status ──
-    if (request.method === "GET" && id) {
-      const record = await blobGet(ctx, id);
+    if (method === "GET" && id) {
+      const record = await blobGet(blobCtx, id);
 
       if (!record) {
-        return jsonResponse({ error: "Not found" }, 404);
+        return lambdaResponse({ error: "Not found" }, 404);
       }
 
-      return jsonResponse({
+      return lambdaResponse({
         id,
         status: record.status,
         publishAt: record.publishAt,
@@ -314,27 +314,27 @@ export default async (request, context) => {
     }
 
     // ── DELETE: Cancel a scheduled event ──
-    if (request.method === "DELETE" && id) {
-      const record = await blobGet(ctx, id);
+    if (method === "DELETE" && id) {
+      const record = await blobGet(blobCtx, id);
 
       if (!record) {
-        return jsonResponse({ error: "Not found" }, 404);
+        return lambdaResponse({ error: "Not found" }, 404);
       }
 
       if (record.status === "published") {
-        return jsonResponse({ error: "Already published, cannot cancel" }, 409);
+        return lambdaResponse({ error: "Already published, cannot cancel" }, 409);
       }
 
-      await blobDelete(ctx, id);
+      await blobDelete(blobCtx, id);
 
-      return jsonResponse({ ok: true, id, status: "cancelled" });
+      return lambdaResponse({ ok: true, id, status: "cancelled" });
     }
 
-    return jsonResponse({ error: "Method not allowed" }, 405);
+    return lambdaResponse({ error: "Method not allowed" }, 405);
 
   } catch (err) {
     console.error("[Scheduler] Error:", err);
-    return jsonResponse({ error: String(err.message || err) }, 500);
+    return lambdaResponse({ error: String(err.message || err) }, 500);
   }
 };
 
