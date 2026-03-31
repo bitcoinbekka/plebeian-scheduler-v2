@@ -11,7 +11,6 @@ import {
   ImageIcon,
   Clock,
   X,
-  ChevronDown,
   Sparkles,
   ShoppingBag,
   Info,
@@ -23,13 +22,13 @@ import {
   Eye,
   BookOpen,
   Pencil,
+  Repeat2,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Separator } from '@/components/ui/separator';
 import {
@@ -880,46 +879,67 @@ export default function Compose() {
           </AlertDialog>
 
           {/* Schedule — the main action */}
-          <Popover open={showScheduler} onOpenChange={setShowScheduler}>
-            <PopoverTrigger asChild>
-              <Button className="gap-2 shadow-lg shadow-primary/20 hover:shadow-primary/30">
-                <CalendarClock className="w-4 h-4" />
-                Schedule
-                <ChevronDown className="w-3 h-3" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-[320px] p-0" align="end">
-              <div className="p-3 space-y-3">
+          <Button
+            className="gap-2 shadow-lg shadow-primary/20 hover:shadow-primary/30"
+            onClick={() => setShowScheduler(true)}
+          >
+            <CalendarClock className="w-4 h-4" />
+            Schedule
+          </Button>
+
+          {/* Schedule Dialog */}
+          <AlertDialog open={showScheduler} onOpenChange={setShowScheduler}>
+            <AlertDialogContent className="max-w-md p-0 gap-0 overflow-hidden">
+              <div className="p-5 pb-3">
+                <AlertDialogHeader className="pb-0">
+                  <AlertDialogTitle className="flex items-center gap-2">
+                    <CalendarClock className="w-5 h-5 text-primary" />
+                    Schedule Post
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Choose when to publish this {post.postType === 'long' ? 'article' : 'note'}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+              </div>
+
+              <div className="px-5 pb-5 space-y-4">
                 {/* Quick schedule */}
-                <div className="space-y-1.5">
-                  <p className="text-xs font-medium text-muted-foreground">Quick schedule</p>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <Button size="sm" variant="secondary" className="text-xs h-9 gap-1.5" onClick={() => handleQuickSchedule(300, '5 minutes')}>
-                      <Clock className="w-3 h-3" /> 5 min
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Quick schedule</p>
+                  <div className="grid grid-cols-4 gap-2">
+                    <Button size="sm" variant="outline" className="text-xs h-10 flex-col gap-0.5 py-1" onClick={() => handleQuickSchedule(300, '5 minutes')}>
+                      <Clock className="w-3.5 h-3.5 text-primary" />
+                      5 min
                     </Button>
-                    <Button size="sm" variant="secondary" className="text-xs h-9 gap-1.5" onClick={() => handleQuickSchedule(3600, '1 hour')}>
-                      <Clock className="w-3 h-3" /> 1 hour
+                    <Button size="sm" variant="outline" className="text-xs h-10 flex-col gap-0.5 py-1" onClick={() => handleQuickSchedule(3600, '1 hour')}>
+                      <Clock className="w-3.5 h-3.5 text-primary" />
+                      1 hour
                     </Button>
-                    <Button size="sm" variant="secondary" className="text-xs h-9 gap-1.5" onClick={() => handleQuickSchedule(86400, '24 hours')}>
-                      <Clock className="w-3 h-3" /> 24 hours
+                    <Button size="sm" variant="outline" className="text-xs h-10 flex-col gap-0.5 py-1" onClick={() => handleQuickSchedule(86400, '24 hours')}>
+                      <Clock className="w-3.5 h-3.5 text-primary" />
+                      24 hrs
                     </Button>
-                    <Button size="sm" variant="secondary" className="text-xs h-9 gap-1.5" onClick={() => handleQuickSchedule(604800, '1 week')}>
-                      <Clock className="w-3 h-3" /> 1 week
+                    <Button size="sm" variant="outline" className="text-xs h-10 flex-col gap-0.5 py-1" onClick={() => handleQuickSchedule(604800, '1 week')}>
+                      <Clock className="w-3.5 h-3.5 text-primary" />
+                      1 week
                     </Button>
                   </div>
                 </div>
 
-                <Separator />
+                <div className="flex items-center gap-3">
+                  <Separator className="flex-1" />
+                  <span className="text-xs text-muted-foreground">or pick a date & time</span>
+                  <Separator className="flex-1" />
+                </div>
 
                 {/* Custom date & time */}
-                <div className="space-y-1.5">
-                  <p className="text-xs font-medium text-muted-foreground">Pick a date & time</p>
+                <div className="space-y-3">
                   <Calendar
                     mode="single"
                     selected={scheduleDate}
                     onSelect={setScheduleDate}
                     disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
-                    className="rounded-md border"
+                    className="rounded-md border mx-auto"
                   />
                   <TimePicker
                     value={scheduleTime}
@@ -927,37 +947,63 @@ export default function Compose() {
                   />
                 </div>
 
-                {/* Recurring option */}
-                <Separator />
-                <div className="space-y-1.5">
-                  <p className="text-xs font-medium text-muted-foreground">Repeat</p>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {[
-                      { label: 'Once', value: 0 },
-                      { label: 'Daily', value: 86400 },
-                      { label: 'Every 3 days', value: 86400 * 3 },
-                      { label: 'Weekly', value: 604800 },
-                    ].map(opt => (
-                      <Button
-                        key={opt.value}
-                        size="sm"
-                        variant={post.recurringInterval === opt.value ? 'default' : 'outline'}
-                        className="text-xs h-8"
-                        onClick={() => updateField('recurringInterval', opt.value)}
-                      >
-                        {opt.label}
-                      </Button>
-                    ))}
-                  </div>
+                {/* Recurring toggle */}
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => updateField('recurringInterval', post.recurringInterval > 0 ? 0 : 86400)}
+                    className={cn(
+                      'flex items-center gap-2.5 w-full p-2.5 rounded-lg border text-left transition-all text-sm',
+                      post.recurringInterval > 0
+                        ? 'bg-primary/5 border-primary/20'
+                        : 'bg-muted/30 border-border hover:border-primary/20'
+                    )}
+                  >
+                    <div className={cn(
+                      'w-5 h-5 rounded flex items-center justify-center text-xs shrink-0 transition-colors',
+                      post.recurringInterval > 0 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+                    )}>
+                      {post.recurringInterval > 0 ? '✓' : <Repeat2 className="w-3 h-3" />}
+                    </div>
+                    <div className="flex-1">
+                      <p className={cn('font-medium text-sm', post.recurringInterval > 0 && 'text-primary')}>
+                        Make this a recurring post
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Auto-reschedule after each publish
+                      </p>
+                    </div>
+                  </button>
+
                   {post.recurringInterval > 0 && (
-                    <p className="text-[10px] text-muted-foreground">
-                      Will auto-reschedule after each publish
-                    </p>
+                    <div className="grid grid-cols-3 gap-1.5 pl-7">
+                      {[
+                        { label: 'Daily', value: 86400 },
+                        { label: 'Every 3 days', value: 86400 * 3 },
+                        { label: 'Weekly', value: 604800 },
+                      ].map(opt => (
+                        <Button
+                          key={opt.value}
+                          size="sm"
+                          variant={post.recurringInterval === opt.value ? 'default' : 'outline'}
+                          className="text-xs h-8"
+                          onClick={() => updateField('recurringInterval', opt.value)}
+                        >
+                          {opt.label}
+                        </Button>
+                      ))}
+                    </div>
                   )}
                 </div>
+              </div>
 
+              {/* Footer with actions */}
+              <div className="flex items-center justify-between gap-3 px-5 py-3 border-t bg-muted/30">
+                <Button variant="ghost" size="sm" onClick={() => setShowScheduler(false)}>
+                  Cancel
+                </Button>
                 <Button
-                  className="w-full gap-2"
+                  className="gap-2"
                   onClick={handleSchedule}
                   disabled={!scheduleDate || isScheduling}
                 >
@@ -971,11 +1017,11 @@ export default function Compose() {
                           d.setHours(h, m);
                           return `Schedule for ${format(d, 'MMM d')} at ${format(d, 'h:mm a')}`;
                         })()
-                      : 'Pick a date & time'}
+                      : 'Pick a date first'}
                 </Button>
               </div>
-            </PopoverContent>
-          </Popover>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
     </div>
