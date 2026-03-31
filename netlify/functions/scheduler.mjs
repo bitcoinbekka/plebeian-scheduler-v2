@@ -50,11 +50,12 @@ function getBlobsContext() {
     }
   }
 
-  // Approach 2: Manual env vars (API-deployed functions)
+  // Approach 2: Manual token + auto-injected SITE_ID (API-deployed functions)
+  // SITE_ID is a reserved env var that Netlify provides automatically
   const token = process.env.NETLIFY_API_TOKEN;
   const siteID = process.env.SITE_ID;
   if (token && siteID) {
-    console.log("[Blobs] Using manual env vars (NETLIFY_API_TOKEN + SITE_ID)");
+    console.log("[Blobs] Using NETLIFY_API_TOKEN + auto SITE_ID");
     return {
       apiURL: "https://api.netlify.com/api/v1",
       token,
@@ -62,8 +63,10 @@ function getBlobsContext() {
     };
   }
 
-  console.error("[Blobs] No blob storage credentials found. Set NETLIFY_API_TOKEN and SITE_ID in your Netlify site environment variables.");
-  console.error("[Blobs] Available env hints: NETLIFY_BLOBS_CONTEXT=" + (raw ? "set" : "unset") + ", NETLIFY_API_TOKEN=" + (token ? "set" : "unset") + ", SITE_ID=" + (siteID ? "set" : "unset"));
+  // Log what we have for debugging
+  console.error("[Blobs] No blob storage credentials found.");
+  console.error("[Blobs] Set NETLIFY_API_TOKEN in your Netlify site environment variables.");
+  console.error("[Blobs] Env status: NETLIFY_BLOBS_CONTEXT=" + (raw ? "set" : "unset") + ", NETLIFY_API_TOKEN=" + (token ? "set" : "unset") + ", SITE_ID=" + (siteID ? "set" : "unset"));
   return null;
 }
 
