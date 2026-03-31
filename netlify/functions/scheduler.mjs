@@ -26,51 +26,70 @@ const STORE_NAME = "scheduled-events";
 
 /**
  * Parse the Netlify Blobs context from the environment.
+ * 
+ * Tries multiple approaches:
+ * 1. NETLIFY_BLOBS_CONTEXT (auto-injected by Netlify build pipeline)
+ * 2. Manual env vars: NETLIFY_API_TOKEN + SITE_ID (set by user in dashboard)
+ * 
  * Returns { apiURL, token, siteID } or null if not available.
  */
 function getBlobsContext() {
+  // Approach 1: Auto-injected context (build-pipeline deploys)
   const raw = process.env.NETLIFY_BLOBS_CONTEXT;
-  if (!raw) {
-    console.error("[Blobs] NETLIFY_BLOBS_CONTEXT not found in environment");
-    return null;
+  if (raw) {
+    try {
+      const decoded = JSON.parse(Buffer.from(raw, "base64").toString("utf-8"));
+      console.log("[Blobs] Using NETLIFY_BLOBS_CONTEXT (auto-injected)");
+      return {
+        apiURL: decoded.apiURL || decoded.edgeURL,
+        token: decoded.token,
+        siteID: decoded.siteID,
+      };
+    } catch (err) {
+      console.error("[Blobs] Failed to parse NETLIFY_BLOBS_CONTEXT:", err);
+    }
   }
-  try {
-    const decoded = JSON.parse(Buffer.from(raw, "base64").toString("utf-8"));
+
+  // Approach 2: Manual env vars (API-deployed functions)
+  const token = process.env.NETLIFY_API_TOKEN;
+  const siteID = process.env.SITE_ID;
+  if (token && siteID) {
+    console.log("[Blobs] Using manual env vars (NETLIFY_API_TOKEN + SITE_ID)");
     return {
-      apiURL: decoded.apiURL || decoded.edgeURL,
-      token: decoded.token,
-      siteID: decoded.siteID,
+      apiURL: "https://api.netlify.com/api/v1",
+      token,
+      siteID,
     };
-  } catch (err) {
-    console.error("[Blobs] Failed to parse NETLIFY_BLOBS_CONTEXT:", err);
-    return null;
   }
+
+  console.error("[Blobs] No blob storage credentials found. Set NETLIFY_API_TOKEN and SITE_ID in your Netlify site environment variables.");
+  console.error("[Blobs] Available env hints: NETLIFY_BLOBS_CONTEXT=" + (raw ? "set" : "unset") + ", NETLIFY_API_TOKEN=" + (token ? "set" : "unset") + ", SITE_ID=" + (siteID ? "set" : "unset"));
+  return null;
 }
 
 /**
  * Build the Blobs API URL for a given store and key.
  *
- * Netlify Blobs API format:
- *   {apiURL}/api/v1/blobs/{siteID}/{storeName}/{key}
+ * Netlify API format:
+ *   https://api.netlify.com/api/v1/blobs/{siteID}/site:{storeName}/{key}
  *
- * For the newer edge API:
- *   {edgeURL}/{siteID}/{storeName}/{key}
+ * Edge URL format:
+ *   {edgeURL}/{siteID}/site:{storeName}/{key}
  */
 function blobUrl(ctx, key) {
-  // The apiURL from context may be the edge URL or the API URL
   const base = ctx.apiURL.replace(/\/$/, "");
 
-  // Detect if this is the edge URL pattern (no /api/v1 prefix)
-  if (base.includes("/api/v1")) {
+  if (base.includes("api.netlify.com")) {
+    // Official Netlify API
     return key
-      ? `${base}/blobs/${ctx.siteID}/${STORE_NAME}/${key}`
-      : `${base}/blobs/${ctx.siteID}/${STORE_NAME}`;
+      ? `${base}/blobs/${ctx.siteID}/site:${STORE_NAME}/${key}`
+      : `${base}/blobs/${ctx.siteID}/site:${STORE_NAME}`;
   }
 
   // Edge/deploy URL pattern
   return key
-    ? `${base}/${ctx.siteID}/${STORE_NAME}/${key}`
-    : `${base}/${ctx.siteID}/${STORE_NAME}`;
+    ? `${base}/${ctx.siteID}/site:${STORE_NAME}/${key}`
+    : `${base}/${ctx.siteID}/site:${STORE_NAME}`;
 }
 
 function blobHeaders(ctx) {
@@ -290,7 +309,12 @@ export async function handler(request) {
 
     // ── GET without id: health check ──
     if (request.method === "GET" && !id) {
-      return jsonResponse({ ok: true, service: "plebeian-scheduler", storage: "connected" });
+      return jsonResponse({
+        ok: true,
+        service: "plebeian-scheduler",
+        storage: ctx ? "connected" : "not configured",
+        method: ctx ? (process.env.NETLIFY_BLOBS_CONTEXT ? "auto" : "manual") : "none",
+      });
     }
 
     // ── DELETE: Cancel a scheduled event ──
