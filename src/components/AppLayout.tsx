@@ -6,6 +6,7 @@ import {
   ListOrdered,
   FileText,
   CalendarDays,
+  Newspaper,
   Settings,
   Menu,
   X,
@@ -33,6 +34,7 @@ const NAV_ITEMS = [
   { path: '/queue', label: 'Queue', icon: ListOrdered },
   { path: '/drafts', label: 'Drafts', icon: FileText },
   { path: '/calendar', label: 'Calendar', icon: CalendarDays },
+  { path: '/feed', label: 'Feed', icon: Newspaper },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 

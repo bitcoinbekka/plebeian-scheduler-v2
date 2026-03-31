@@ -22,7 +22,7 @@ import {
   Hash,
   Eye,
   BookOpen,
-  Repeat2,
+  Pencil,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -47,6 +47,8 @@ import { ImageUploader } from '@/components/ImageUploader';
 import { ListingBrowser, type CampaignListing } from '@/components/ListingBrowser';
 import { AiGenerateDialog } from '@/components/AiGenerateDialog';
 import { MarkdownEditor } from '@/components/MarkdownEditor';
+import { TimePicker } from '@/components/TimePicker';
+import { NoteContent } from '@/components/NoteContent';
 import { useScheduler } from '@/contexts/SchedulerContext';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
@@ -113,6 +115,7 @@ export default function Compose() {
   const [showScheduler, setShowScheduler] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [hashtagInput, setHashtagInput] = useState('');
+  const [showNotePreview, setShowNotePreview] = useState(false);
 
   const updateField = useCallback(<K extends keyof SchedulerPost>(field: K, value: SchedulerPost[K]) => {
     setPost(prev => ({ ...prev, [field]: value }));
@@ -298,11 +301,24 @@ export default function Compose() {
     toast({ title: 'Content inserted', description: 'AI-generated text added.' });
   }, [toast]);
 
-  // Multi-listing campaign — create scheduled promo posts spread across time
-  const handleCampaign = useCallback((listings: CampaignListing[]) => {
+  // Multi-listing campaign — create scheduled promo posts with user-specified timing
+  const handleCampaign = useCallback((listings: CampaignListing[], options?: { startDate: Date; startTime: string; intervalSeconds: number }) => {
     if (!user || listings.length === 0) return;
-    const now = Math.floor(Date.now() / 1000);
-    const interval = 6 * 3600; // 6 hours apart by default
+
+    // Use provided options or default fallback
+    let startTimestamp: number;
+    let interval: number;
+
+    if (options) {
+      const [hours, minutes] = options.startTime.split(':').map(Number);
+      const start = new Date(options.startDate);
+      start.setHours(hours, minutes, 0, 0);
+      startTimestamp = Math.floor(start.getTime() / 1000);
+      interval = options.intervalSeconds;
+    } else {
+      startTimestamp = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
+      interval = 6 * 3600;
+    }
 
     for (let i = 0; i < listings.length; i++) {
       const item = listings[i];
@@ -311,13 +327,18 @@ export default function Compose() {
       newPost.media = item.media;
       newPost.importedListing = item.importedListing;
       newPost.status = 'scheduled';
-      newPost.scheduledAt = now + (interval * (i + 1));
+      newPost.scheduledAt = startTimestamp + (interval * i);
       updatePost(newPost);
     }
 
+    const intervalLabel = interval < 3600 ? `${interval / 60} min` :
+      interval === 3600 ? '1 hour' :
+      interval < 86400 ? `${interval / 3600} hours` :
+      interval === 86400 ? '1 day' : `${interval / 86400} days`;
+
     toast({
       title: `Campaign created!`,
-      description: `${listings.length} promo notes scheduled, one every 6 hours.`,
+      description: `${listings.length} promo notes scheduled, one every ${intervalLabel}.`,
     });
     navigate('/');
   }, [user, updatePost, toast, navigate]);
@@ -632,45 +653,96 @@ export default function Compose() {
           />
         </div>
       ) : (
-        /* Short / Promo: simple card editor */
+        /* Short / Promo: simple card editor with edit/preview toggle */
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base">Your Note</CardTitle>
-              <AiGenerateDialog
-                currentContent={post.content}
-                listingTitle={post.importedListing?.title}
-                listingContext={
-                  post.importedListing
-                    ? [
-                        post.importedListing.summary && `Summary: ${post.importedListing.summary}`,
-                        post.importedListing.price && `Price: ${post.importedListing.price} ${post.importedListing.currency}`,
-                        post.importedListing.location && `Location: ${post.importedListing.location}`,
-                        post.importedListing.categories.length > 0 && `Categories: ${post.importedListing.categories.join(', ')}`,
-                      ].filter(Boolean).join('. ')
-                    : undefined
-                }
-                onInsert={handleAiInsert}
-              >
-                <Button variant="outline" size="sm" className="gap-2 text-xs">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  AI Generate
+              <div className="flex items-center gap-2">
+                <AiGenerateDialog
+                  currentContent={post.content}
+                  listingTitle={post.importedListing?.title}
+                  listingContext={
+                    post.importedListing
+                      ? [
+                          post.importedListing.summary && `Summary: ${post.importedListing.summary}`,
+                          post.importedListing.price && `Price: ${post.importedListing.price} ${post.importedListing.currency}`,
+                          post.importedListing.location && `Location: ${post.importedListing.location}`,
+                          post.importedListing.categories.length > 0 && `Categories: ${post.importedListing.categories.join(', ')}`,
+                        ].filter(Boolean).join('. ')
+                      : undefined
+                  }
+                  onInsert={handleAiInsert}
+                >
+                  <Button variant="outline" size="sm" className="gap-2 text-xs">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    AI Generate
+                  </Button>
+                </AiGenerateDialog>
+                {/* Edit / Preview toggle */}
+                <Button
+                  variant={showNotePreview ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="gap-1.5 text-xs"
+                  onClick={() => setShowNotePreview(!showNotePreview)}
+                >
+                  {showNotePreview ? <Pencil className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  {showNotePreview ? 'Edit' : 'Preview'}
                 </Button>
-              </AiGenerateDialog>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            <Textarea
-              placeholder={
-                post.postType === 'promo'
-                  ? "Write your promotional note... e.g. 'Check out my fresh Christmas Cakes! 50,000 sats 🎄'"
-                  : "What's on your mind? Share an update, announcement, or thought..."
-              }
-              value={post.content}
-              onChange={e => updateField('content', e.target.value)}
-              className="min-h-[160px] text-sm"
-              rows={8}
-            />
+            {showNotePreview ? (
+              /* Preview mode */
+              <div className="min-h-[160px] rounded-lg border bg-secondary/20 p-4 space-y-3">
+                {post.content ? (
+                  <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+                    <NoteContent event={{ kind: 1, content: post.content, tags: [], id: '', pubkey: '', sig: '', created_at: 0 }} className="text-sm" />
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground italic">Nothing to preview yet...</p>
+                )}
+                {/* Image gallery preview */}
+                {post.media.length > 0 && (
+                  <div className={cn(
+                    'grid gap-2',
+                    post.media.length === 1 && 'grid-cols-1',
+                    post.media.length === 2 && 'grid-cols-2',
+                    post.media.length >= 3 && 'grid-cols-2 sm:grid-cols-3',
+                  )}>
+                    {post.media.map((img, idx) => (
+                      <div
+                        key={img.url}
+                        className={cn(
+                          'relative rounded-lg overflow-hidden border bg-muted',
+                          post.media.length === 1 ? 'aspect-video' : 'aspect-square',
+                        )}
+                      >
+                        <img
+                          src={img.url}
+                          alt={img.alt || `Image ${idx + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* Edit mode */
+              <Textarea
+                placeholder={
+                  post.postType === 'promo'
+                    ? "Write your promotional note... e.g. 'Check out my fresh Christmas Cakes! 50,000 sats 🎄'"
+                    : "What's on your mind? Share an update, announcement, or thought..."
+                }
+                value={post.content}
+                onChange={e => updateField('content', e.target.value)}
+                className="min-h-[160px] text-sm"
+                rows={8}
+              />
+            )}
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted-foreground">
                 {post.content.length} characters
@@ -700,51 +772,7 @@ export default function Compose() {
         </CardContent>
       </Card>
 
-      {/* ===== NOTE PREVIEW (short + promo posts) ===== */}
-      {post.postType !== 'long' && (post.content || post.media.length > 0) && (
-        <Card className="bg-secondary/30 border-dashed">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
-              <Eye className="w-3.5 h-3.5" />
-              Note Preview
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {/* Content preview */}
-            {post.content ? (
-              <div className="text-sm whitespace-pre-wrap break-words">{post.content}</div>
-            ) : (
-              <p className="text-sm text-muted-foreground italic">Start typing to see a preview...</p>
-            )}
-
-            {/* Image gallery preview */}
-            {post.media.length > 0 && (
-              <div className={cn(
-                'grid gap-2',
-                post.media.length === 1 && 'grid-cols-1',
-                post.media.length === 2 && 'grid-cols-2',
-                post.media.length >= 3 && 'grid-cols-2 sm:grid-cols-3',
-              )}>
-                {post.media.map((img, idx) => (
-                  <div
-                    key={img.url}
-                    className={cn(
-                      'relative rounded-lg overflow-hidden border bg-muted',
-                      post.media.length === 1 ? 'aspect-video' : 'aspect-square',
-                    )}
-                  >
-                    <img
-                      src={img.url}
-                      alt={img.alt || `Image ${idx + 1}`}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      {/* Note preview was moved into the card editor above with edit/preview toggle */}
 
       <Separator />
 
@@ -841,15 +869,10 @@ export default function Compose() {
                     disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
                     className="rounded-md border"
                   />
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <Input
-                      type="time"
-                      value={scheduleTime}
-                      onChange={e => setScheduleTime(e.target.value)}
-                      className="flex-1"
-                    />
-                  </div>
+                  <TimePicker
+                    value={scheduleTime}
+                    onChange={setScheduleTime}
+                  />
                 </div>
 
                 {/* Recurring option */}
@@ -888,7 +911,12 @@ export default function Compose() {
                 >
                   <CalendarClock className="w-4 h-4" />
                   {scheduleDate
-                    ? `Schedule for ${format(scheduleDate, 'MMM d')} at ${scheduleTime}`
+                    ? (() => {
+                        const [h, m] = scheduleTime.split(':').map(Number);
+                        const d = new Date(scheduleDate);
+                        d.setHours(h, m);
+                        return `Schedule for ${format(d, 'MMM d')} at ${format(d, 'h:mm a')}`;
+                      })()
                     : 'Pick a date & time'}
                 </Button>
               </div>

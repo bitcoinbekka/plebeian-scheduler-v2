@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { nip19 } from 'nostr-tools';
 import {
   Search,
@@ -12,6 +12,9 @@ import {
   ChevronUp,
   Globe,
   Loader2,
+  CalendarClock,
+  Pencil,
+  X,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -20,10 +23,14 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
+import { Calendar } from '@/components/ui/calendar';
+import { Textarea } from '@/components/ui/textarea';
+import { TimePicker } from '@/components/TimePicker';
 import { useMyListings, useAllListings, type ExistingListing } from '@/hooks/useMyListings';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import type { NostrMetadata } from '@nostrify/nostrify';
 import { PLEBEIAN_MARKET_URL, type ImportedListing, type UploadedImage } from '@/lib/types';
@@ -34,9 +41,15 @@ export interface CampaignListing {
   importedListing: ImportedListing;
 }
 
+interface CampaignOptions {
+  startDate: Date;
+  startTime: string;
+  intervalSeconds: number;
+}
+
 interface ListingBrowserProps {
   onImport: (data: { content: string; media: UploadedImage[]; importedListing: ImportedListing }) => void;
-  onCampaign?: (listings: CampaignListing[]) => void;
+  onCampaign?: (listings: CampaignListing[], options?: CampaignOptions) => void;
 }
 
 type BrowseMode = 'mine' | 'all';
@@ -217,13 +230,29 @@ function ListingSkeletons() {
   );
 }
 
+const INTERVAL_OPTIONS = [
+  { label: '30 min', value: 1800 },
+  { label: '1 hour', value: 3600 },
+  { label: '3 hours', value: 10800 },
+  { label: '6 hours', value: 21600 },
+  { label: '12 hours', value: 43200 },
+  { label: '1 day', value: 86400 },
+  { label: '2 days', value: 172800 },
+  { label: '1 week', value: 604800 },
+];
+
 export function ListingBrowser({ onImport, onCampaign }: ListingBrowserProps) {
   const [isOpen, setIsOpen] = useState(true);
   const [mode, setMode] = useState<BrowseMode>('mine');
   const [searchTerm, setSearchTerm] = useState('');
   const [allSearchInput, setAllSearchInput] = useState('');
   const [campaignMode, setCampaignMode] = useState(false);
+  const [showCampaignConfig, setShowCampaignConfig] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [campaignStartDate, setCampaignStartDate] = useState<Date | undefined>(undefined);
+  const [campaignStartTime, setCampaignStartTime] = useState('12:00');
+  const [campaignInterval, setCampaignInterval] = useState(21600); // 6 hours default
+  const [campaignDrafts, setCampaignDrafts] = useState<Map<string, string>>(new Map());
   const { user } = useCurrentUser();
 
   const { data: myListings, isLoading: myLoading } = useMyListings();
@@ -293,37 +322,61 @@ export function ListingBrowser({ onImport, onCampaign }: ListingBrowserProps) {
   const currentListings = mode === 'mine' ? filteredMyListings : (allListings ?? []);
   const isLoading = mode === 'mine' ? myLoading : allLoading;
 
+  // Build campaign listing data from selected listings
+  const selectedCampaignListings = useMemo(() => {
+    if (!campaignMode || selectedIds.size === 0) return [];
+    return currentListings
+      .filter(l => selectedIds.has(l.event.id))
+      .map(listing => {
+        const defaultContent = buildPromoContent(listing);
+        const customContent = campaignDrafts.get(listing.event.id);
+        const media: UploadedImage[] = listing.images.map(img => ({
+          url: img.url,
+          dimensions: img.dimensions,
+        }));
+        const naddr = buildNaddr(listing);
+        return {
+          listing,
+          content: customContent ?? defaultContent,
+          media,
+          importedListing: {
+            naddr,
+            marketplaceUrl: `${PLEBEIAN_MARKET_URL}/products/${listing.event.id}`,
+            title: listing.title,
+            summary: listing.summary,
+            price: listing.price,
+            currency: listing.currency || 'SAT',
+            location: listing.location,
+            categories: listing.categories,
+            images: media,
+            authorPubkey: listing.event.pubkey,
+          } as ImportedListing,
+        };
+      });
+  }, [campaignMode, selectedIds, currentListings, campaignDrafts]);
+
   const handleCreateCampaign = useCallback(() => {
-    if (!onCampaign) return;
-    const selected = currentListings.filter(l => selectedIds.has(l.event.id));
-    const campaignListings: CampaignListing[] = selected.map(listing => {
-      const promoContent = buildPromoContent(listing);
-      const media: UploadedImage[] = listing.images.map(img => ({
-        url: img.url,
-        dimensions: img.dimensions,
-      }));
-      const naddr = buildNaddr(listing);
-      return {
-        content: promoContent,
-        media,
-        importedListing: {
-          naddr,
-          marketplaceUrl: `${PLEBEIAN_MARKET_URL}/products/${listing.event.id}`,
-          title: listing.title,
-          summary: listing.summary,
-          price: listing.price,
-          currency: listing.currency || 'SAT',
-          location: listing.location,
-          categories: listing.categories,
-          images: media,
-          authorPubkey: listing.event.pubkey,
-        },
-      };
-    });
-    onCampaign(campaignListings);
+    if (!onCampaign || selectedCampaignListings.length === 0) return;
+
+    const campaignListings: CampaignListing[] = selectedCampaignListings.map(item => ({
+      content: item.content,
+      media: item.media,
+      importedListing: item.importedListing,
+    }));
+
+    const options: CampaignOptions | undefined = campaignStartDate ? {
+      startDate: campaignStartDate,
+      startTime: campaignStartTime,
+      intervalSeconds: campaignInterval,
+    } : undefined;
+
+    onCampaign(campaignListings, options);
     setCampaignMode(false);
+    setShowCampaignConfig(false);
     setSelectedIds(new Set());
-  }, [onCampaign, currentListings, selectedIds]);
+    setCampaignDrafts(new Map());
+    setCampaignStartDate(undefined);
+  }, [onCampaign, selectedCampaignListings, campaignStartDate, campaignStartTime, campaignInterval]);
 
   return (
     <Card className={cn('transition-all duration-300', isOpen && 'ring-1 ring-primary/20')}>
@@ -393,29 +446,177 @@ export function ListingBrowser({ onImport, onCampaign }: ListingBrowserProps) {
 
           {/* Campaign mode toggle */}
           {onCampaign && mode === 'mine' && (myListings?.length ?? 0) > 1 && (
-            <div className={cn(
-              'flex items-center justify-between p-2.5 rounded-lg border transition-all',
-              campaignMode ? 'bg-primary/5 border-primary/20' : 'bg-muted/50 border-border hover:border-primary/20'
-            )}>
-              <button
-                type="button"
-                onClick={() => { setCampaignMode(!campaignMode); setSelectedIds(new Set()); }}
-                className="flex items-center gap-2 text-xs font-medium transition-colors"
-              >
-                <span className={cn(
-                  'w-5 h-5 rounded flex items-center justify-center text-[10px] transition-colors',
-                  campaignMode ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
-                )}>
-                  {campaignMode ? '✓' : '📢'}
-                </span>
-                <span className={campaignMode ? 'text-primary' : 'text-foreground'}>
-                  {campaignMode ? 'Campaign mode — select listings below' : 'Multi-listing campaign'}
-                </span>
-              </button>
-              {campaignMode && selectedIds.size > 0 && (
-                <Button size="sm" className="text-xs h-7 gap-1.5 shadow-sm" onClick={handleCreateCampaign}>
-                  Schedule {selectedIds.size} posts
-                </Button>
+            <div className="space-y-3">
+              <div className={cn(
+                'flex items-center justify-between p-2.5 rounded-lg border transition-all',
+                campaignMode ? 'bg-primary/5 border-primary/20' : 'bg-muted/50 border-border hover:border-primary/20'
+              )}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !campaignMode;
+                    setCampaignMode(next);
+                    if (!next) {
+                      setSelectedIds(new Set());
+                      setShowCampaignConfig(false);
+                      setCampaignDrafts(new Map());
+                    }
+                  }}
+                  className="flex items-center gap-2 text-xs font-medium transition-colors"
+                >
+                  <span className={cn(
+                    'w-5 h-5 rounded flex items-center justify-center text-[10px] transition-colors',
+                    campaignMode ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+                  )}>
+                    {campaignMode ? '✓' : '📢'}
+                  </span>
+                  <span className={campaignMode ? 'text-primary' : 'text-foreground'}>
+                    {campaignMode ? 'Campaign mode — select listings below' : 'Multi-listing campaign'}
+                  </span>
+                </button>
+                {campaignMode && selectedIds.size > 0 && !showCampaignConfig && (
+                  <Button
+                    size="sm"
+                    className="text-xs h-7 gap-1.5 shadow-sm"
+                    onClick={() => setShowCampaignConfig(true)}
+                  >
+                    <CalendarClock className="w-3 h-3" />
+                    Configure {selectedIds.size} posts
+                  </Button>
+                )}
+              </div>
+
+              {/* Campaign configuration panel */}
+              {campaignMode && showCampaignConfig && selectedIds.size > 0 && (
+                <Card className="border-primary/20 bg-primary/[0.02]">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <CalendarClock className="w-4 h-4 text-primary" />
+                        Campaign Schedule — {selectedIds.size} post{selectedIds.size !== 1 ? 's' : ''}
+                      </CardTitle>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="w-7 h-7"
+                        onClick={() => setShowCampaignConfig(false)}
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {/* Start date & time */}
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">Start date & time</p>
+                      <Calendar
+                        mode="single"
+                        selected={campaignStartDate}
+                        onSelect={setCampaignStartDate}
+                        disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
+                        className="rounded-md border"
+                      />
+                      <TimePicker
+                        value={campaignStartTime}
+                        onChange={setCampaignStartTime}
+                      />
+                    </div>
+
+                    <Separator />
+
+                    {/* Frequency */}
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">Post every</p>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {INTERVAL_OPTIONS.map(opt => (
+                          <Button
+                            key={opt.value}
+                            size="sm"
+                            variant={campaignInterval === opt.value ? 'default' : 'outline'}
+                            className="text-xs h-8"
+                            onClick={() => setCampaignInterval(opt.value)}
+                          >
+                            {opt.label}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <Separator />
+
+                    {/* Per-post content editors */}
+                    <div className="space-y-3">
+                      <p className="text-xs font-medium text-muted-foreground">Edit post content</p>
+                      {selectedCampaignListings.map((item, i) => {
+                        const scheduledTime = campaignStartDate
+                          ? (() => {
+                              const [h, m] = campaignStartTime.split(':').map(Number);
+                              const d = new Date(campaignStartDate);
+                              d.setHours(h, m, 0, 0);
+                              d.setSeconds(d.getSeconds() + campaignInterval * i);
+                              return format(d, 'MMM d, h:mm a');
+                            })()
+                          : `Post ${i + 1}`;
+                        return (
+                          <div key={item.listing.event.id} className="rounded-lg border bg-card p-3 space-y-2">
+                            <div className="flex items-center gap-2">
+                              {item.listing.images.length > 0 && (
+                                <img
+                                  src={item.listing.images[0].url}
+                                  alt=""
+                                  className="w-8 h-8 rounded object-cover shrink-0"
+                                />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium truncate">{item.listing.title || 'Untitled'}</p>
+                                <p className="text-[10px] text-muted-foreground">
+                                  <Clock className="w-2.5 h-2.5 inline mr-0.5" />
+                                  {scheduledTime}
+                                </p>
+                              </div>
+                              <Badge variant="secondary" className="text-[10px] shrink-0">
+                                #{i + 1}
+                              </Badge>
+                            </div>
+                            <Textarea
+                              value={item.content}
+                              onChange={e => {
+                                setCampaignDrafts(prev => {
+                                  const next = new Map(prev);
+                                  next.set(item.listing.event.id, e.target.value);
+                                  return next;
+                                });
+                              }}
+                              className="text-xs min-h-[80px]"
+                              rows={4}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Schedule summary & action */}
+                    <div className="flex items-center justify-between pt-1">
+                      {campaignStartDate ? (
+                        <p className="text-xs text-muted-foreground">
+                          First post: {format(campaignStartDate, 'MMM d')} at {campaignStartTime}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-amber-600 dark:text-amber-400">
+                          Pick a start date above
+                        </p>
+                      )}
+                      <Button
+                        className="gap-2 shadow-lg shadow-primary/20"
+                        onClick={handleCreateCampaign}
+                        disabled={!campaignStartDate}
+                      >
+                        <CalendarClock className="w-4 h-4" />
+                        Schedule {selectedIds.size} Posts
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
               )}
             </div>
           )}
