@@ -24,10 +24,11 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useScheduler } from '@/contexts/SchedulerContext';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useBatchEngagement, type PostEngagement } from '@/hooks/usePostEngagement';
+import { useMyPublishedPosts, type AnalyticsPost, eventToAnalyticsPost } from '@/hooks/useMyPublishedPosts';
 import { useAuthor } from '@/hooks/useAuthor';
 import { cn } from '@/lib/utils';
-import { format, subDays, startOfDay, startOfWeek, isAfter } from 'date-fns';
-import type { SchedulerPost } from '@/lib/types';
+import { format, subDays, startOfDay, isAfter } from 'date-fns';
+import type { NostrEvent } from '@nostrify/nostrify';
 
 // --- Helpers ---
 
@@ -48,13 +49,13 @@ function formatSats(sats: number): string {
   return sats.toLocaleString();
 }
 
-function getPostTitle(post: SchedulerPost): string {
+function getPostTitle(post: AnalyticsPost): string {
   if (post.postType === 'long' && post.title) return post.title;
-  if (post.importedListing?.title) return post.importedListing.title;
+  if (post.listingTitle) return post.listingTitle;
   return post.content.slice(0, 60) || 'Empty note';
 }
 
-function getPostIcon(post: SchedulerPost) {
+function getPostIcon(post: AnalyticsPost) {
   if (post.postType === 'long') return Newspaper;
   if (post.postType === 'promo') return ShoppingBag;
   return MessageSquare;
@@ -107,7 +108,7 @@ function PostDetailView({
   engagement,
   onClose,
 }: {
-  post: SchedulerPost;
+  post: AnalyticsPost;
   engagement?: PostEngagement;
   onClose: () => void;
 }) {
@@ -168,7 +169,7 @@ function PostDetailView({
               <div className="min-w-0">
                 <CardTitle className="text-base truncate">{getPostTitle(post)}</CardTitle>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {post.publishedAt ? format(new Date(post.publishedAt * 1000), 'MMM d, yyyy h:mm a') : 'Not published'}
+                  {format(new Date(post.publishedAt * 1000), 'MMM d, yyyy h:mm a')}
                 </p>
               </div>
             </div>
@@ -244,17 +245,15 @@ function PostDetailView({
             </div>
 
             {/* Link to njump */}
-            {post.publishedEventId && (
-              <a
-                href={'https://njump.me/' + nip19.noteEncode(post.publishedEventId)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 text-sm text-primary hover:underline py-2"
-              >
-                <Globe className="w-4 h-4" />
-                View on Nostr
-              </a>
-            )}
+            <a
+              href={'https://njump.me/' + nip19.noteEncode(post.eventId)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 text-sm text-primary hover:underline py-2"
+            >
+              <Globe className="w-4 h-4" />
+              View on Nostr
+            </a>
           </CardContent>
         </ScrollArea>
       </Card>
@@ -268,38 +267,51 @@ function Analytics() {
     description: 'Track engagement, audience insights, and posting performance.',
   });
 
-  const { posts } = useScheduler();
+  const { posts: schedulerPosts } = useScheduler();
   const { user } = useCurrentUser();
-  const [selectedPost, setSelectedPost] = useState<SchedulerPost | null>(null);
+  const { data: relayPosts, isLoading: postsLoading } = useMyPublishedPosts();
+  const [selectedPost, setSelectedPost] = useState<AnalyticsPost | null>(null);
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | 'all'>('30d');
 
-  // Published posts
-  const publishedPosts = useMemo(() =>
-    posts
-      .filter(p => p.status === 'published' && p.publishedEventId)
-      .sort((a, b) => (b.publishedAt ?? b.updatedAt) - (a.publishedAt ?? a.updatedAt)),
-    [posts],
-  );
+  // Build a lookup of scheduler posts by their publishedEventId for enrichment
+  const schedulerLookup = useMemo(() => {
+    const map = new Map<string, typeof schedulerPosts[0]>();
+    for (const sp of schedulerPosts) {
+      if (sp.publishedEventId) map.set(sp.publishedEventId, sp);
+    }
+    return map;
+  }, [schedulerPosts]);
+
+  // Convert relay events to AnalyticsPost, enriching with scheduler data when available
+  const publishedPosts = useMemo(() => {
+    if (!relayPosts) return [];
+    return relayPosts.map(event => {
+      const schedulerPost = schedulerLookup.get(event.id);
+      const listingTitle = schedulerPost?.importedListing?.title;
+      return eventToAnalyticsPost(event, listingTitle);
+    });
+  }, [relayPosts, schedulerLookup]);
 
   // Filter by time range
   const filteredPosts = useMemo(() => {
     if (timeRange === 'all') return publishedPosts;
     const cutoff = timeRange === '7d' ? subDays(new Date(), 7) : subDays(new Date(), 30);
     return publishedPosts.filter(p => {
-      const date = p.publishedAt ? new Date(p.publishedAt * 1000) : new Date(p.updatedAt * 1000);
+      const date = new Date(p.publishedAt * 1000);
       return isAfter(date, cutoff);
     });
   }, [publishedPosts, timeRange]);
 
   const eventIds = useMemo(
-    () => filteredPosts.map(p => p.publishedEventId!).filter(Boolean),
+    () => filteredPosts.map(p => p.eventId),
     [filteredPosts],
   );
-  const { data: engagementMap, isLoading } = useBatchEngagement(eventIds);
+  const { data: engagementMap, isLoading: engagementLoading } = useBatchEngagement(eventIds);
+  const isLoading = postsLoading || engagementLoading;
 
   // All event IDs for audience analysis (always use all posts)
   const allEventIds = useMemo(
-    () => publishedPosts.map(p => p.publishedEventId!).filter(Boolean),
+    () => publishedPosts.map(p => p.eventId),
     [publishedPosts],
   );
   const { data: allEngagementMap } = useBatchEngagement(allEventIds);
@@ -337,11 +349,11 @@ function Analytics() {
     }
 
     for (const post of filteredPosts) {
-      const pubDate = post.publishedAt ? new Date(post.publishedAt * 1000) : new Date(post.updatedAt * 1000);
+      const pubDate = new Date(post.publishedAt * 1000);
       const key = format(startOfDay(pubDate), 'yyyy-MM-dd');
       if (buckets[key]) {
         buckets[key].posts++;
-        const eng = engagementMap.get(post.publishedEventId!);
+        const eng = engagementMap.get(post.eventId);
         if (eng) {
           buckets[key].reactions += eng.reactionCount;
           buckets[key].sats += eng.totalSats;
@@ -361,7 +373,7 @@ function Analytics() {
       const type = post.postType;
       if (!stats[type]) stats[type] = { count: 0, reactions: 0, sats: 0, zaps: 0 };
       stats[type].count++;
-      const eng = engagementMap.get(post.publishedEventId!);
+      const eng = engagementMap.get(post.eventId);
       if (eng) {
         stats[type].reactions += eng.reactionCount;
         stats[type].sats += eng.totalSats;
@@ -387,12 +399,12 @@ function Analytics() {
     const engGrid: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0));
 
     for (const post of publishedPosts) {
-      const date = post.publishedAt ? new Date(post.publishedAt * 1000) : new Date(post.updatedAt * 1000);
+      const date = new Date(post.publishedAt * 1000);
       const day = date.getDay();
       const hour = date.getHours();
       grid[day][hour]++;
       if (allEngagementMap) {
-        const eng = allEngagementMap.get(post.publishedEventId!);
+        const eng = allEngagementMap.get(post.eventId);
         if (eng) engGrid[day][hour] += eng.reactionCount + (eng.zapCount * 3);
       }
     }
@@ -462,15 +474,15 @@ function Analytics() {
   // Campaign performance (posts with importedListing grouped by listing title)
   const campaignData = useMemo(() => {
     if (!engagementMap) return [];
-    const campaigns = new Map<string, { title: string; posts: SchedulerPost[]; reactions: number; sats: number }>();
+    const campaigns = new Map<string, { title: string; posts: AnalyticsPost[]; reactions: number; sats: number }>();
 
     for (const post of filteredPosts) {
-      if (!post.importedListing?.title) continue;
-      const key = post.importedListing.title;
+      if (!post.listingTitle) continue;
+      const key = post.listingTitle;
       if (!campaigns.has(key)) campaigns.set(key, { title: key, posts: [], reactions: 0, sats: 0 });
       const c = campaigns.get(key)!;
       c.posts.push(post);
-      const eng = engagementMap.get(post.publishedEventId!);
+      const eng = engagementMap.get(post.eventId);
       if (eng) {
         c.reactions += eng.reactionCount;
         c.sats += eng.totalSats;
@@ -486,7 +498,7 @@ function Analytics() {
     if (!engagementMap) return [];
     return filteredPosts
       .map(post => {
-        const eng = engagementMap.get(post.publishedEventId!);
+        const eng = engagementMap.get(post.eventId);
         const score = (eng?.reactionCount || 0) + ((eng?.zapCount || 0) * 3);
         return { post, engagement: eng, score };
       })
@@ -502,7 +514,7 @@ function Analytics() {
       {selectedPost && (
         <PostDetailView
           post={selectedPost}
-          engagement={engagementMap?.get(selectedPost.publishedEventId!)}
+          engagement={engagementMap?.get(selectedPost.eventId)}
           onClose={() => setSelectedPost(null)}
         />
       )}
