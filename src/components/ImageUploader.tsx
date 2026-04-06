@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
-import { Upload, X, Image as ImageIcon, Loader2 } from 'lucide-react';
+import { Upload, X, Image as ImageIcon, Loader2, ChevronUp, ChevronDown, Link as LinkIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { useUploadFile } from '@/hooks/useUploadFile';
 import type { UploadedImage } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -8,6 +9,7 @@ import { cn } from '@/lib/utils';
 interface ImageUploaderProps {
   images: UploadedImage[];
   onImagesChange: (images: UploadedImage[]) => void;
+  onInsertUrl?: (url: string) => void;
   maxImages?: number;
   className?: string;
 }
@@ -15,6 +17,7 @@ interface ImageUploaderProps {
 export function ImageUploader({
   images,
   onImagesChange,
+  onInsertUrl,
   maxImages = 10,
   className,
 }: ImageUploaderProps) {
@@ -85,6 +88,14 @@ export function ImageUploader({
     onImagesChange(images.filter((_, i) => i !== idx));
   };
 
+  const moveImage = (idx: number, direction: 'up' | 'down') => {
+    const newIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (newIdx < 0 || newIdx >= images.length) return;
+    const newImages = [...images];
+    [newImages[idx], newImages[newIdx]] = [newImages[newIdx], newImages[idx]];
+    onImagesChange(newImages);
+  };
+
   return (
     <div className={cn('space-y-3', className)}>
       {/* Image Grid */}
@@ -100,18 +111,54 @@ export function ImageUploader({
                 alt={img.alt || `Upload ${idx + 1}`}
                 className="w-full h-full object-cover"
               />
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center">
-                <Button
-                  variant="destructive"
-                  size="icon"
-                  className="w-8 h-8 opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={() => removeImage(idx)}
-                >
-                  <X className="w-4 h-4" />
-                </Button>
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-colors flex items-center justify-center gap-1">
+                {/* Reorder buttons */}
+                <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {idx > 0 && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="secondary" size="icon" className="w-7 h-7" onClick={() => moveImage(idx, 'up')}>
+                          <ChevronUp className="w-3.5 h-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent className="text-xs">Move left</TooltipContent>
+                    </Tooltip>
+                  )}
+                  {idx < images.length - 1 && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="secondary" size="icon" className="w-7 h-7" onClick={() => moveImage(idx, 'down')}>
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent className="text-xs">Move right</TooltipContent>
+                    </Tooltip>
+                  )}
+                </div>
+                {/* Insert + Remove */}
+                <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {onInsertUrl && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="secondary" size="icon" className="w-7 h-7" onClick={() => onInsertUrl(img.url)}>
+                          <LinkIcon className="w-3.5 h-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent className="text-xs">Insert URL into note</TooltipContent>
+                    </Tooltip>
+                  )}
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    className="w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={() => removeImage(idx)}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
               </div>
               {idx === 0 && (
-                <span className="absolute top-2 left-2 bg-primary text-primary-foreground text-xs px-2 py-0.5 rounded-md font-medium">
+                <span className="absolute top-2 left-2 bg-primary text-primary-foreground text-[10px] px-1.5 py-0.5 rounded-md font-medium">
                   Cover
                 </span>
               )}

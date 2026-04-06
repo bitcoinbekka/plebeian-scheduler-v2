@@ -101,7 +101,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             // Badge counts
             let badge: number | null = null;
             if (item.path === '/drafts') badge = stats.drafts || null;
-            if (item.path === '/queue') badge = stats.queued || null;
+            if (item.path === '/queue') badge = (stats.queued + stats.scheduled) || null;
 
             return (
               <Link

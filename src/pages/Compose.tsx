@@ -717,22 +717,19 @@ export default function Compose() {
                 {post.media.length > 0 && (
                   <div className={cn(
                     'grid gap-2',
-                    post.media.length === 1 && 'grid-cols-1',
+                    post.media.length === 1 && 'grid-cols-1 max-w-sm',
                     post.media.length === 2 && 'grid-cols-2',
                     post.media.length >= 3 && 'grid-cols-2 sm:grid-cols-3',
                   )}>
                     {post.media.map((img, idx) => (
                       <div
                         key={img.url}
-                        className={cn(
-                          'relative rounded-lg overflow-hidden border bg-muted',
-                          post.media.length === 1 ? 'aspect-video' : 'aspect-square',
-                        )}
+                        className="relative rounded-lg overflow-hidden border bg-muted"
                       >
                         <img
                           src={img.url}
                           alt={img.alt || `Image ${idx + 1}`}
-                          className="w-full h-full object-cover"
+                          className="w-full h-auto max-h-64 object-contain"
                         />
                       </div>
                     ))}
@@ -778,18 +775,66 @@ export default function Compose() {
           <ImageUploader
             images={post.media}
             onImagesChange={imgs => updateField('media', imgs)}
+            onInsertUrl={(url) => {
+              const separator = post.content && !post.content.endsWith('\n') ? '\n' : '';
+              updateField('content', post.content + separator + url);
+              toast({ title: 'Image URL inserted', description: 'URL added to your note content.' });
+            }}
           />
         </CardContent>
       </Card>
 
-      {/* ===== HASHTAG SUGGESTIONS ===== */}
+      {/* ===== HASHTAG INPUT + SUGGESTIONS ===== */}
       {post.postType !== 'long' && (
         <Card className="bg-muted/20">
-          <CardContent className="p-3">
-            <div className="flex items-center gap-2 mb-2">
-              <Hash className="w-3.5 h-3.5 text-muted-foreground" />
-              <p className="text-xs font-medium text-muted-foreground">Quick hashtags — click to add to your note</p>
+          <CardContent className="p-3 space-y-3">
+            {/* Custom hashtag input */}
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Type a hashtag and press Enter"
+                  value={hashtagInput}
+                  onChange={e => setHashtagInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const tag = hashtagInput.trim().replace(/^#/, '');
+                      if (tag) {
+                        const hashtag = `#${tag}`;
+                        if (!post.content.toLowerCase().includes(hashtag.toLowerCase())) {
+                          const separator = post.content && !post.content.endsWith('\n') && !post.content.endsWith(' ') ? ' ' : '';
+                          updateField('content', post.content + separator + hashtag);
+                        }
+                        setHashtagInput('');
+                      }
+                    }
+                  }}
+                  className="pl-9 text-sm"
+                />
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!hashtagInput.trim()}
+                onClick={() => {
+                  const tag = hashtagInput.trim().replace(/^#/, '');
+                  if (tag) {
+                    const hashtag = `#${tag}`;
+                    if (!post.content.toLowerCase().includes(hashtag.toLowerCase())) {
+                      const separator = post.content && !post.content.endsWith('\n') && !post.content.endsWith(' ') ? ' ' : '';
+                      updateField('content', post.content + separator + hashtag);
+                    }
+                    setHashtagInput('');
+                  }
+                }}
+              >
+                Add
+              </Button>
             </div>
+            {/* Quick suggestions */}
+            <div>
+              <p className="text-[10px] font-medium text-muted-foreground mb-1.5">Quick suggestions</p>
             <div className="flex flex-wrap gap-1.5">
               {[
                 ...(post.postType === 'promo'
@@ -820,6 +865,7 @@ export default function Compose() {
                   </Button>
                 );
               })}
+            </div>
             </div>
           </CardContent>
         </Card>

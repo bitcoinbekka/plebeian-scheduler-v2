@@ -584,6 +584,36 @@ export default function Dashboard() {
               </CardContent>
             </Card>
           )}
+
+          {/* Quick links to new features */}
+          <div className="grid grid-cols-2 gap-2">
+            <Link to="/analytics">
+              <Card className="hover:shadow-md transition-all hover:border-primary/20 cursor-pointer group h-full">
+                <CardContent className="p-3 flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                    <BarChart3 className="w-4 h-4 text-primary" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium">Analytics</p>
+                    <p className="text-[10px] text-muted-foreground">Charts & insights</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+            <Link to="/leads">
+              <Card className="hover:shadow-md transition-all hover:border-violet-500/20 cursor-pointer group h-full">
+                <CardContent className="p-3 flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                    <Users className="w-4 h-4 text-violet-500" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium">Lead Tracker</p>
+                    <p className="text-[10px] text-muted-foreground">Your audience CRM</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          </div>
         </div>
 
         {/* RIGHT COLUMN — Published posts with engagement (3/5 width) */}
