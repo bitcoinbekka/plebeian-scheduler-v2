@@ -7,6 +7,7 @@ import {
   FileText,
   CalendarDays,
   Newspaper,
+  BarChart3,
   Settings,
   Menu,
   X,
@@ -35,6 +36,7 @@ const NAV_ITEMS = [
   { path: '/drafts', label: 'Drafts', icon: FileText },
   { path: '/calendar', label: 'Calendar', icon: CalendarDays },
   { path: '/feed', label: 'Feed', icon: Newspaper },
+  { path: '/analytics', label: 'Analytics', icon: BarChart3 },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 

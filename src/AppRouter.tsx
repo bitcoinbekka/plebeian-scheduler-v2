@@ -9,6 +9,7 @@ import QueuePage from "./pages/QueuePage";
 import CalendarView from "./pages/CalendarView";
 import Feed from "./pages/Feed";
 import SettingsPage from "./pages/SettingsPage";
+import Analytics from "./pages/Analytics";
 import { NIP19Page } from "./pages/NIP19Page";
 import NotFound from "./pages/NotFound";
 
@@ -24,6 +25,7 @@ export function AppRouter() {
           <Route path="/queue" element={<QueuePage />} />
           <Route path="/calendar" element={<CalendarView />} />
           <Route path="/feed" element={<Feed />} />
+          <Route path="/analytics" element={<Analytics />} />
           <Route path="/settings" element={<SettingsPage />} />
           {/* NIP-19 route for npub1, note1, naddr1, nevent1, nprofile1 */}
           <Route path="/:nip19" element={<NIP19Page />} />
