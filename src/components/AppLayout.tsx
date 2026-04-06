@@ -8,6 +8,7 @@ import {
   CalendarDays,
   Newspaper,
   BarChart3,
+  Users,
   Settings,
   Menu,
   X,
@@ -37,6 +38,7 @@ const NAV_ITEMS = [
   { path: '/calendar', label: 'Calendar', icon: CalendarDays },
   { path: '/feed', label: 'Feed', icon: Newspaper },
   { path: '/analytics', label: 'Analytics', icon: BarChart3 },
+  { path: '/leads', label: 'Leads', icon: Users },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
