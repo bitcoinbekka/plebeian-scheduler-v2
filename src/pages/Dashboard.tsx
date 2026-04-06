@@ -28,7 +28,9 @@ import {
   BookmarkPlus,
   Megaphone,
   Trophy,
+  Flame,
 } from 'lucide-react';
+import { AreaChart, Area, ResponsiveContainer, XAxis, Tooltip as RechartsTooltip } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -39,10 +41,51 @@ import { useScheduler } from '@/contexts/SchedulerContext';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useBatchEngagement, type PostEngagement } from '@/hooks/usePostEngagement';
+import { useMyPublishedPosts } from '@/hooks/useMyPublishedPosts';
+import { useLeadTracker } from '@/hooks/useLeadTracker';
+import { useAuthor } from '@/hooks/useAuthor';
 import { useToast } from '@/hooks/useToast';
-import { format, formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow, subDays, startOfDay } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { createNewPost, type SchedulerPost } from '@/lib/types';
+
+/** Mini lead row for the dashboard */
+function LeadMiniRow({ pubkey, score, sats, rank }: { pubkey: string; score: number; sats: number; rank: number }) {
+  const { data: author } = useAuthor(pubkey);
+  const metadata = author?.metadata;
+  const displayName = metadata?.name || metadata?.display_name || pubkey.slice(0, 10) + '...';
+  return (
+    <Link
+      to="/leads"
+      className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-secondary/50 transition-colors"
+    >
+      <span className={cn(
+        'text-[10px] font-bold w-4 text-center shrink-0',
+        rank === 1 ? 'text-amber-500' : rank === 2 ? 'text-gray-400' : rank === 3 ? 'text-amber-700' : 'text-muted-foreground/50',
+      )}>
+        {rank}
+      </span>
+      <div className="w-7 h-7 rounded-full bg-muted overflow-hidden shrink-0">
+        {metadata?.picture ? (
+          <img src={metadata.picture} alt={displayName} className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-[10px] font-medium text-muted-foreground">
+            {displayName.slice(0, 2).toUpperCase()}
+          </div>
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-medium truncate">{displayName}</p>
+        {sats > 0 && (
+          <p className="text-[10px] text-amber-500 flex items-center gap-0.5">
+            <Zap className="w-2.5 h-2.5" /> {formatSats(sats)} sats
+          </p>
+        )}
+      </div>
+      <span className="text-xs font-semibold tabular-nums text-muted-foreground">{score}</span>
+    </Link>
+  );
+}
 
 /** Get a human-friendly title for a post */
 function getPostTitle(post: SchedulerPost): string {
@@ -206,6 +249,54 @@ export default function Dashboard() {
     if (entries.filter(e => e.count > 0).length < 2) return null;
     return entries;
   }, [publishedPosts, engagementMap]);
+
+  // Relay-based data for charts
+  const { data: relayPosts } = useMyPublishedPosts();
+  const { leads: topLeads } = useLeadTracker();
+
+  // Relay engagement for sparkline chart (last 14 days)
+  const relayEventIds = useMemo(
+    () => (relayPosts || []).map(e => e.id),
+    [relayPosts],
+  );
+  const { data: relayEngMap } = useBatchEngagement(relayEventIds);
+
+  // 14-day engagement sparkline data
+  const sparklineData = useMemo(() => {
+    if (!relayPosts || !relayEngMap) return [];
+    const buckets: Record<string, { date: string; reactions: number; sats: number }> = {};
+    for (let i = 13; i >= 0; i--) {
+      const d = startOfDay(subDays(new Date(), i));
+      const key = format(d, 'yyyy-MM-dd');
+      buckets[key] = { date: format(d, 'MMM d'), reactions: 0, sats: 0 };
+    }
+    for (const event of relayPosts) {
+      const key = format(startOfDay(new Date(event.created_at * 1000)), 'yyyy-MM-dd');
+      if (!buckets[key]) continue;
+      const eng = relayEngMap.get(event.id);
+      if (eng) {
+        buckets[key].reactions += eng.reactionCount;
+        buckets[key].sats += eng.totalSats;
+      }
+    }
+    return Object.values(buckets);
+  }, [relayPosts, relayEngMap]);
+
+  // Mini weekly heatmap (7 days x 24 hours)
+  const miniHeatmap = useMemo(() => {
+    if (!relayPosts || !relayEngMap) return null;
+    const DAYS_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const grid: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0));
+    for (const event of relayPosts) {
+      const d = new Date(event.created_at * 1000);
+      const eng = relayEngMap.get(event.id);
+      if (eng) {
+        grid[d.getDay()][d.getHours()] += eng.reactionCount + (eng.zapCount * 3);
+      }
+    }
+    const max = Math.max(1, ...grid.flat());
+    return { grid, max, labels: DAYS_LABELS };
+  }, [relayPosts, relayEngMap]);
 
   // Engagement notifications — toast when new zaps/reactions arrive
   const prevEngagementRef = useRef<{ reactions: number; sats: number }>({ reactions: 0, sats: 0 });
@@ -377,6 +468,121 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ===== ENGAGEMENT SPARKLINE + MINI HEATMAP + TOP LEADS ===== */}
+      {(sparklineData.length > 0 || (topLeads && topLeads.length > 0)) && (
+        <div className="grid lg:grid-cols-3 gap-4">
+          {/* Engagement sparkline */}
+          {sparklineData.length > 0 && (
+            <Card className="lg:col-span-2">
+              <CardHeader className="pb-1">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <TrendingUp className="w-3.5 h-3.5 text-primary" />
+                    14-Day Engagement
+                  </CardTitle>
+                  <Link to="/analytics">
+                    <Button variant="ghost" size="sm" className="gap-1 text-xs h-6">
+                      Details <ArrowRight className="w-3 h-3" />
+                    </Button>
+                  </Link>
+                </div>
+              </CardHeader>
+              <CardContent className="pb-3">
+                <div className="h-32">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={sparklineData} margin={{ top: 5, right: 5, bottom: 0, left: 5 }}>
+                      <defs>
+                        <linearGradient id="dashGradReactions" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="hsl(347, 77%, 60%)" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="hsl(347, 77%, 60%)" stopOpacity={0} />
+                        </linearGradient>
+                        <linearGradient id="dashGradSats" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="hsl(38, 92%, 50%)" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="hsl(38, 92%, 50%)" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <XAxis dataKey="date" tick={{ fontSize: 9 }} interval="preserveStartEnd" axisLine={false} tickLine={false} />
+                      <RechartsTooltip
+                        contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: '11px' }}
+                      />
+                      <Area type="monotone" dataKey="reactions" stroke="hsl(347, 77%, 60%)" fill="url(#dashGradReactions)" strokeWidth={2} name="Reactions" />
+                      <Area type="monotone" dataKey="sats" stroke="hsl(38, 92%, 50%)" fill="url(#dashGradSats)" strokeWidth={2} name="Sats" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+                {/* Mini heatmap below chart */}
+                {miniHeatmap && (
+                  <div className="mt-3 pt-3 border-t">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                      <Flame className="w-3 h-3 text-primary" /> Engagement Heatmap
+                    </p>
+                    <div className="space-y-px">
+                      {miniHeatmap.labels.map((day, dayIdx) => (
+                        <div key={day} className="flex items-center gap-0.5">
+                          <span className="text-[8px] text-muted-foreground w-6 text-right shrink-0">{day}</span>
+                          <div className="flex flex-1 gap-px">
+                            {Array.from({ length: 24 }).map((_, hour) => {
+                              const val = miniHeatmap.grid[dayIdx][hour];
+                              const intensity = val / miniHeatmap.max;
+                              return (
+                                <Tooltip key={hour}>
+                                  <TooltipTrigger asChild>
+                                    <div
+                                      className="flex-1 aspect-square rounded-[1px] min-w-[4px]"
+                                      style={{
+                                        backgroundColor: intensity > 0
+                                          ? `hsl(334 100% 58% / ${0.1 + intensity * 0.8})`
+                                          : 'hsl(var(--muted) / 0.3)',
+                                      }}
+                                    />
+                                  </TooltipTrigger>
+                                  <TooltipContent className="text-[10px]">
+                                    {day} {hour % 12 || 12}{hour >= 12 ? 'pm' : 'am'}: score {val}
+                                  </TooltipContent>
+                                </Tooltip>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Top Leads mini card */}
+          {topLeads && topLeads.length > 0 && (
+            <Card>
+              <CardHeader className="pb-1">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-violet-500" />
+                    Top Leads
+                  </CardTitle>
+                  <Link to="/leads">
+                    <Button variant="ghost" size="sm" className="gap-1 text-xs h-6">
+                      All <ArrowRight className="w-3 h-3" />
+                    </Button>
+                  </Link>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-1">
+                {topLeads.slice(0, 5).map((lead, i) => (
+                  <LeadMiniRow key={lead.pubkey} pubkey={lead.pubkey} score={lead.score} sats={lead.totalSats} rank={i + 1} />
+                ))}
+                <Link to="/leads" className="block pt-1">
+                  <p className="text-[10px] text-primary hover:underline text-center">
+                    View all {topLeads.length} leads
+                  </p>
+                </Link>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
 
       {/* ===== FAILED ALERT ===== */}
       {failedPosts.length > 0 && (
