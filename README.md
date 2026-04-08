@@ -2,7 +2,7 @@
 
 A Nostr-based social media scheduler for [Plebeian Market](https://plebeian.market) merchants. Compose short notes, long-form articles, and product promotions, then schedule them to publish automatically to Nostr relays.
 
-[![Edit with Shakespeare](https://shakespeare.diy/badge.svg)](https://shakespeare.diy/clone?url=https%3A%2F%2Fbitcoinbekka%3A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%40github.com%2Fbitcoinbekka%2Fplebeian-scheduler-v2.git)
+[![Edit with Shakespeare](https://shakespeare.diy/badge.svg)](https://shakespeare.diy/clone?url=https%3A%2F%2Fgithub.com%2Fbitcoinbekka%2Fplebeian-scheduler-v2.git)
 
 **License:** GPL-3.0 (same as Plebeian Market)
 
