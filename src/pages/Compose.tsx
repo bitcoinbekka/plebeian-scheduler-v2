@@ -31,6 +31,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Calendar } from '@/components/ui/calendar';
 import { Separator } from '@/components/ui/separator';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -117,6 +118,8 @@ export default function Compose() {
   const [isSaving, setIsSaving] = useState(false);
   const [hashtagInput, setHashtagInput] = useState('');
   const [showNotePreview, setShowNotePreview] = useState(false);
+  const [customIntervalValue, setCustomIntervalValue] = useState('');
+  const [customIntervalUnit, setCustomIntervalUnit] = useState<'days' | 'weeks' | 'months'>('days');
 
   const updateField = useCallback(<K extends keyof SchedulerPost>(field: K, value: SchedulerPost[K]) => {
     setPost(prev => ({ ...prev, [field]: value }));
@@ -1005,7 +1008,14 @@ export default function Compose() {
                 <div className="space-y-2">
                   <button
                     type="button"
-                    onClick={() => updateField('recurringInterval', post.recurringInterval > 0 ? 0 : 86400)}
+                    onClick={() => {
+                      if (post.recurringInterval > 0) {
+                        updateField('recurringInterval', 0);
+                        setCustomIntervalValue('');
+                      } else {
+                        updateField('recurringInterval', 86400);
+                      }
+                    }}
                     className={cn(
                       'flex items-center gap-2.5 w-full p-2.5 rounded-lg border text-left transition-all text-sm',
                       post.recurringInterval > 0
@@ -1030,22 +1040,97 @@ export default function Compose() {
                   </button>
 
                   {post.recurringInterval > 0 && (
-                    <div className="grid grid-cols-3 gap-1.5 pl-7">
-                      {[
-                        { label: 'Daily', value: 86400 },
-                        { label: 'Every 3 days', value: 86400 * 3 },
-                        { label: 'Weekly', value: 604800 },
-                      ].map(opt => (
-                        <Button
-                          key={opt.value}
-                          size="sm"
-                          variant={post.recurringInterval === opt.value ? 'default' : 'outline'}
-                          className="text-xs h-8"
-                          onClick={() => updateField('recurringInterval', opt.value)}
-                        >
-                          {opt.label}
-                        </Button>
-                      ))}
+                    <div className="space-y-2.5 pl-7">
+                      {/* Quick presets */}
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {[
+                          { label: 'Daily', value: 86400 },
+                          { label: 'Weekly', value: 604800 },
+                          { label: 'Bi-weekly', value: 604800 * 2 },
+                          { label: 'Monthly', value: 86400 * 30 },
+                        ].map(opt => (
+                          <Button
+                            key={opt.value}
+                            size="sm"
+                            variant={post.recurringInterval === opt.value ? 'default' : 'outline'}
+                            className="text-xs h-8"
+                            onClick={() => {
+                              updateField('recurringInterval', opt.value);
+                              setCustomIntervalValue('');
+                            }}
+                          >
+                            {opt.label}
+                          </Button>
+                        ))}
+                      </div>
+
+                      {/* Custom interval */}
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                          Or set a custom interval
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground shrink-0">Every</span>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={365}
+                            placeholder="e.g. 3"
+                            value={customIntervalValue}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setCustomIntervalValue(val);
+                              const num = parseInt(val);
+                              if (num > 0) {
+                                const multiplier = customIntervalUnit === 'days' ? 86400
+                                  : customIntervalUnit === 'weeks' ? 604800
+                                  : 86400 * 30;
+                                updateField('recurringInterval', num * multiplier);
+                              }
+                            }}
+                            className="w-20 h-8 text-xs text-center"
+                          />
+                          <Select
+                            value={customIntervalUnit}
+                            onValueChange={(val: 'days' | 'weeks' | 'months') => {
+                              setCustomIntervalUnit(val);
+                              const num = parseInt(customIntervalValue);
+                              if (num > 0) {
+                                const multiplier = val === 'days' ? 86400
+                                  : val === 'weeks' ? 604800
+                                  : 86400 * 30;
+                                updateField('recurringInterval', num * multiplier);
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="w-24 h-8 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="days">days</SelectItem>
+                              <SelectItem value="weeks">weeks</SelectItem>
+                              <SelectItem value="months">months</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      {/* Current setting summary */}
+                      <div className="flex items-center gap-1.5 py-1">
+                        <Repeat2 className="w-3 h-3 text-primary" />
+                        <span className="text-[11px] text-primary font-medium">
+                          {post.recurringInterval < 86400
+                            ? `Every ${Math.round(post.recurringInterval / 3600)} hours`
+                            : post.recurringInterval === 86400 ? 'Every day'
+                            : post.recurringInterval < 604800
+                              ? `Every ${Math.round(post.recurringInterval / 86400)} days`
+                            : post.recurringInterval === 604800 ? 'Every week'
+                            : post.recurringInterval < 86400 * 30
+                              ? `Every ${Math.round(post.recurringInterval / 604800)} weeks`
+                            : post.recurringInterval === 86400 * 30 ? 'Every month'
+                            : `Every ${Math.round(post.recurringInterval / (86400 * 30))} months`}
+                        </span>
+                      </div>
                     </div>
                   )}
                 </div>

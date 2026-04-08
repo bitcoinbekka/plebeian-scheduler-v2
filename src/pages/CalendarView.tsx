@@ -74,11 +74,18 @@ function getPostIcon(post: SchedulerPost) {
 
 function getRecurringLabel(interval: number): string {
   if (interval === 86400) return 'Daily';
-  if (interval === 86400 * 3) return 'Every 3 days';
   if (interval === 604800) return 'Weekly';
+  if (interval === 604800 * 2) return 'Bi-weekly';
+  if (interval === 86400 * 30) return 'Monthly';
   if (interval < 3600) return `Every ${Math.round(interval / 60)} min`;
   if (interval < 86400) return `Every ${Math.round(interval / 3600)} hours`;
-  return `Every ${Math.round(interval / 86400)} days`;
+  if (interval < 604800) return `Every ${Math.round(interval / 86400)} days`;
+  if (interval < 86400 * 30) {
+    const weeks = Math.round(interval / 604800);
+    return `Every ${weeks} week${weeks !== 1 ? 's' : ''}`;
+  }
+  const months = Math.round(interval / (86400 * 30));
+  return `Every ${months} month${months !== 1 ? 's' : ''}`;
 }
 
 function getPostTypeBadge(post: SchedulerPost) {

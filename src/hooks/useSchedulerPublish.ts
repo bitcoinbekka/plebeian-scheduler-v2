@@ -79,9 +79,19 @@ export function useSchedulerPublish() {
           };
           updatePost(newPost);
           console.log(`[Scheduler] Recurring: next publish at ${new Date(nextAt * 1000).toISOString()}`);
+          const intervalLabel = post.recurringInterval < 86400
+            ? `${Math.round(post.recurringInterval / 3600)} hours`
+            : post.recurringInterval === 86400 ? '1 day'
+            : post.recurringInterval < 604800
+              ? `${Math.round(post.recurringInterval / 86400)} days`
+            : post.recurringInterval === 604800 ? '1 week'
+            : post.recurringInterval < 86400 * 30
+              ? `${Math.round(post.recurringInterval / 604800)} weeks`
+            : post.recurringInterval === 86400 * 30 ? '1 month'
+            : `${Math.round(post.recurringInterval / (86400 * 30))} months`;
           toast({
             title: 'Recurring post rescheduled',
-            description: `Next publish in ${Math.round(post.recurringInterval / 3600)} hours.`,
+            description: `Next publish in ${intervalLabel}.`,
           });
         }
       }
