@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useSeoMeta } from '@unhead/react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
 import {
   FileText,
@@ -24,9 +24,6 @@ import {
   Sparkles,
   Repeat2,
   Globe,
-  Copy,
-  BookmarkPlus,
-  Megaphone,
   Trophy,
   Flame,
 } from 'lucide-react';
@@ -41,13 +38,14 @@ import { useScheduler } from '@/contexts/SchedulerContext';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useBatchEngagement, type PostEngagement } from '@/hooks/usePostEngagement';
-import { useMyPublishedPosts } from '@/hooks/useMyPublishedPosts';
+import { useMyPublishedPosts, eventToAnalyticsPost, type AnalyticsPost } from '@/hooks/useMyPublishedPosts';
 import { useLeadTracker } from '@/hooks/useLeadTracker';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useToast } from '@/hooks/useToast';
 import { format, formatDistanceToNow, subDays, startOfDay } from 'date-fns';
 import { cn } from '@/lib/utils';
-import { createNewPost, type SchedulerPost } from '@/lib/types';
+import { type SchedulerPost } from '@/lib/types';
+
 
 /** Mini lead row for the dashboard */
 function LeadMiniRow({ pubkey, score, sats, rank }: { pubkey: string; score: number; sats: number; rank: number }) {
@@ -94,10 +92,26 @@ function getPostTitle(post: SchedulerPost): string {
   return post.content.slice(0, 60) || 'Empty note';
 }
 
+/** Get a human-friendly title for a relay post (AnalyticsPost) */
+function getRelayPostTitle(post: AnalyticsPost): string {
+  if (post.postType === 'long' && post.title) return post.title;
+  if (post.postType === 'repost') return 'Repost';
+  if (post.listingTitle) return post.listingTitle;
+  return post.content.slice(0, 60) || 'Empty note';
+}
+
 /** Get the appropriate icon for a post type */
 function getPostIcon(post: SchedulerPost) {
   if (post.postType === 'long') return Newspaper;
   if (post.postType === 'promo') return ShoppingBag;
+  return MessageSquare;
+}
+
+/** Get the appropriate icon for a relay post type */
+function getRelayPostIcon(post: AnalyticsPost) {
+  if (post.postType === 'long') return Newspaper;
+  if (post.postType === 'promo') return ShoppingBag;
+  if (post.postType === 'repost') return Repeat2;
   return MessageSquare;
 }
 
@@ -168,21 +182,12 @@ export default function Dashboard() {
     description: 'Manage your scheduled Nostr posts and track engagement.',
   });
 
-  const { posts, stats, updatePost } = useScheduler();
+  const { posts, stats } = useScheduler();
   const { user } = useCurrentUser();
   const { mutateAsync: publishEvent } = useNostrPublish();
   const { toast } = useToast();
-  const navigate = useNavigate();
 
-  // Published posts sorted by most recent
-  const publishedPosts = useMemo(() =>
-    posts
-      .filter(p => p.status === 'published' && p.publishedEventId)
-      .sort((a, b) => (b.publishedAt ?? b.updatedAt) - (a.publishedAt ?? a.updatedAt)),
-    [posts],
-  );
-
-  // Upcoming scheduled posts
+  // Upcoming scheduled posts (from scheduler localStorage)
   const upcoming = useMemo(() =>
     posts
       .filter(p => p.status === 'scheduled' && p.scheduledAt)
@@ -191,42 +196,69 @@ export default function Dashboard() {
     [posts],
   );
 
-  // Failed posts
+  // Failed posts (from scheduler localStorage)
   const failedPosts = useMemo(() => posts.filter(p => p.status === 'failed'), [posts]);
 
-  // Batch-fetch engagement for all published posts
-  const publishedEventIds = useMemo(
-    () => publishedPosts.map(p => p.publishedEventId!).filter(Boolean),
-    [publishedPosts],
-  );
-  const { data: engagementMap, isLoading: engagementLoading } = useBatchEngagement(publishedEventIds);
+  // ===== RELAY-BASED DATA (the source of truth for ALL engagement) =====
+  const { data: relayPosts, isLoading: relayPostsLoading } = useMyPublishedPosts();
+  const { leads: topLeads } = useLeadTracker();
 
-  // Aggregate engagement across all published posts
+  // Build scheduler lookup for enriching relay posts with listing titles
+  const schedulerLookup = useMemo(() => {
+    const map = new Map<string, typeof posts[0]>();
+    for (const sp of posts) {
+      if (sp.publishedEventId) map.set(sp.publishedEventId, sp);
+    }
+    return map;
+  }, [posts]);
+
+  // Convert relay events to AnalyticsPost, enriching with scheduler data when available
+  const relayAnalyticsPosts = useMemo(() => {
+    if (!relayPosts) return [];
+    return relayPosts.map(event => {
+      const schedulerPost = schedulerLookup.get(event.id);
+      const listingTitle = schedulerPost?.importedListing?.title;
+      return eventToAnalyticsPost(event, listingTitle);
+    });
+  }, [relayPosts, schedulerLookup]);
+
+  // Engagement period selector state (7, 14, or 30 days)
+  const [engagementDays, setEngagementDays] = useState<7 | 14 | 30>(14);
+
+  // Batch-fetch engagement for ALL relay posts (the single source of truth)
+  const relayEventIds = useMemo(
+    () => (relayPosts || []).map(e => e.id),
+    [relayPosts],
+  );
+  const { data: engagementMap, isLoading: engagementLoading } = useBatchEngagement(relayEventIds);
+
+  // Total engagement from ALL relay posts (the real numbers)
   const totalEngagement = useMemo(() => {
-    if (!engagementMap) return { reactions: 0, zaps: 0, sats: 0, uniqueZappers: 0 };
+    if (!engagementMap) return { reactions: 0, zaps: 0, sats: 0 };
     let reactions = 0, zaps = 0, sats = 0;
-    const allZappers = new Set<string>();
     for (const eng of engagementMap.values()) {
       reactions += eng.reactionCount;
       zaps += eng.zapCount;
       sats += eng.totalSats;
     }
-    return { reactions, zaps, sats, uniqueZappers: allZappers.size };
+    return { reactions, zaps, sats };
   }, [engagementMap]);
 
-  // Post type performance comparison
+  // Post type performance comparison (from relay data)
   const typePerformance = useMemo(() => {
-    if (!engagementMap || publishedPosts.length < 2) return null;
+    if (!engagementMap || relayAnalyticsPosts.length < 2) return null;
 
     const typeStats: Record<string, { count: number; reactions: number; zaps: number; sats: number }> = {};
 
-    for (const post of publishedPosts) {
-      if (!post.publishedEventId) continue;
-      const type = post.postType === 'promo' ? 'Promo Notes' : post.postType === 'long' ? 'Articles' : 'Short Notes';
+    for (const post of relayAnalyticsPosts) {
+      const type = post.postType === 'promo' ? 'Promo Notes'
+        : post.postType === 'long' ? 'Articles'
+        : post.postType === 'repost' ? 'Reposts'
+        : 'Short Notes';
       if (!typeStats[type]) typeStats[type] = { count: 0, reactions: 0, zaps: 0, sats: 0 };
       typeStats[type].count++;
 
-      const eng = engagementMap.get(post.publishedEventId);
+      const eng = engagementMap.get(post.eventId);
       if (eng) {
         typeStats[type].reactions += eng.reactionCount;
         typeStats[type].zaps += eng.zapCount;
@@ -248,25 +280,11 @@ export default function Dashboard() {
     // Only show if there are at least 2 types with posts
     if (entries.filter(e => e.count > 0).length < 2) return null;
     return entries;
-  }, [publishedPosts, engagementMap]);
-
-  // Relay-based data for charts
-  const { data: relayPosts } = useMyPublishedPosts();
-  const { leads: topLeads } = useLeadTracker();
-
-  // Engagement period selector state (7, 14, or 30 days)
-  const [engagementDays, setEngagementDays] = useState<7 | 14 | 30>(14);
-
-  // Relay engagement for sparkline chart
-  const relayEventIds = useMemo(
-    () => (relayPosts || []).map(e => e.id),
-    [relayPosts],
-  );
-  const { data: relayEngMap } = useBatchEngagement(relayEventIds);
+  }, [relayAnalyticsPosts, engagementMap]);
 
   // Dynamic engagement sparkline data based on selected period
   const sparklineData = useMemo(() => {
-    if (!relayPosts || !relayEngMap) return [];
+    if (!relayPosts || !engagementMap) return [];
     const buckets: Record<string, { date: string; reactions: number; sats: number }> = {};
     for (let i = engagementDays - 1; i >= 0; i--) {
       const d = startOfDay(subDays(new Date(), i));
@@ -277,30 +295,30 @@ export default function Dashboard() {
     for (const event of relayPosts) {
       const key = format(startOfDay(new Date(event.created_at * 1000)), 'yyyy-MM-dd');
       if (!buckets[key]) continue;
-      const eng = relayEngMap.get(event.id);
+      const eng = engagementMap.get(event.id);
       if (eng) {
         buckets[key].reactions += eng.reactionCount;
         buckets[key].sats += eng.totalSats;
       }
     }
     return Object.values(buckets);
-  }, [relayPosts, relayEngMap, engagementDays]);
+  }, [relayPosts, engagementMap, engagementDays]);
 
   // Mini weekly heatmap (7 days x 24 hours)
   const miniHeatmap = useMemo(() => {
-    if (!relayPosts || !relayEngMap) return null;
+    if (!relayPosts || !engagementMap) return null;
     const DAYS_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const grid: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0));
     for (const event of relayPosts) {
       const d = new Date(event.created_at * 1000);
-      const eng = relayEngMap.get(event.id);
+      const eng = engagementMap.get(event.id);
       if (eng) {
         grid[d.getDay()][d.getHours()] += eng.reactionCount + (eng.zapCount * 3);
       }
     }
     const max = Math.max(1, ...grid.flat());
     return { grid, max, labels: DAYS_LABELS };
-  }, [relayPosts, relayEngMap]);
+  }, [relayPosts, engagementMap]);
 
   // Engagement notifications — toast when new zaps/reactions arrive
   const prevEngagementRef = useRef<{ reactions: number; sats: number }>({ reactions: 0, sats: 0 });
@@ -326,62 +344,7 @@ export default function Dashboard() {
     prevEngagementRef.current = { reactions: totalEngagement.reactions, sats: totalEngagement.sats };
   }, [totalEngagement.reactions, totalEngagement.sats, toast]);
 
-  // Repost (kind 6) a published note
-  const handleRepost = async (post: SchedulerPost) => {
-    if (!user || !post.publishedEventId) return;
-    try {
-      await publishEvent({
-        kind: 6,
-        content: '',
-        tags: [
-          ['e', post.publishedEventId, '', 'mention'],
-          ['p', post.authorPubkey],
-        ],
-      });
-      toast({ title: 'Reposted!', description: 'Your note has been boosted on Nostr.' });
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Unknown error';
-      toast({ title: 'Repost failed', description: msg, variant: 'destructive' });
-    }
-  };
 
-  // Save a published post's content as a reusable template
-  const handleSaveTemplate = (post: SchedulerPost) => {
-    const templates: { name: string; content: string; postType: string; createdAt: number }[] =
-      JSON.parse(localStorage.getItem('plebeian-scheduler:templates') ?? '[]');
-
-    const name = post.postType === 'long' && post.title
-      ? post.title
-      : post.importedListing?.title
-        ? `Promo: ${post.importedListing.title}`
-        : post.content.slice(0, 40) || 'Untitled template';
-
-    templates.push({
-      name,
-      content: post.content,
-      postType: post.postType,
-      createdAt: Math.floor(Date.now() / 1000),
-    });
-
-    localStorage.setItem('plebeian-scheduler:templates', JSON.stringify(templates));
-    toast({ title: 'Template saved!', description: `"${name}" added to your templates.` });
-  };
-
-  // Duplicate a published post as a new draft for re-promotion
-  const handlePromoteAgain = (post: SchedulerPost) => {
-    if (!user) return;
-    const newPost = createNewPost(user.pubkey, post.postType);
-    newPost.content = post.content;
-    newPost.title = post.title;
-    newPost.summary = post.summary;
-    newPost.headerImage = post.headerImage;
-    newPost.hashtags = [...post.hashtags];
-    newPost.media = [...post.media];
-    newPost.importedListing = post.importedListing ? { ...post.importedListing } : undefined;
-    updatePost(newPost);
-    toast({ title: 'Draft created!', description: 'A copy has been created. Edit and schedule it.' });
-    navigate(`/compose?edit=${newPost.id}`);
-  };
 
   return (
     <div className="space-y-8 animate-fade-in overflow-hidden">
@@ -422,7 +385,9 @@ export default function Dashboard() {
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <p className="text-[10px] sm:text-xs text-muted-foreground font-medium uppercase tracking-wider">Published</p>
-                <p className="text-2xl sm:text-3xl font-bold font-display mt-1">{stats.published}</p>
+                <p className="text-2xl sm:text-3xl font-bold font-display mt-1">
+                  {relayPostsLoading ? <Skeleton className="h-9 w-12 inline-block" /> : relayAnalyticsPosts.length}
+                </p>
               </div>
               <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-emerald-500/10 flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
                 <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-500" />
@@ -725,12 +690,11 @@ export default function Dashboard() {
           )}
 
           {/* Best time to post insight */}
-          {publishedPosts.length >= 3 && engagementMap && engagementMap.size > 0 && (() => {
-            // Analyze: which hour of day had the most engagement
+          {relayAnalyticsPosts.length >= 3 && engagementMap && engagementMap.size > 0 && (() => {
+            // Analyze: which hour of day had the most engagement (using ALL relay posts)
             const hourBuckets: Record<number, number> = {};
-            for (const post of publishedPosts) {
-              if (!post.publishedAt || !post.publishedEventId) continue;
-              const eng = engagementMap.get(post.publishedEventId);
+            for (const post of relayAnalyticsPosts) {
+              const eng = engagementMap.get(post.eventId);
               if (!eng) continue;
               const hour = new Date(post.publishedAt * 1000).getHours();
               const score = eng.reactionCount + (eng.zapCount * 3); // Weight zaps higher
@@ -754,7 +718,7 @@ export default function Dashboard() {
                     <div>
                       <p className="text-xs font-medium text-muted-foreground">Best time to post</p>
                       <p className="text-lg font-bold font-display">{h12}:00 {ampm}</p>
-                      <p className="text-[10px] text-muted-foreground">Based on your engagement data</p>
+                      <p className="text-[10px] text-muted-foreground">Based on all your Nostr engagement</p>
                     </div>
                   </div>
                 </CardContent>
@@ -854,15 +818,15 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* RIGHT COLUMN — Published posts with engagement (3/5 width) */}
+        {/* RIGHT COLUMN — ALL published posts from Nostr with engagement (3/5 width) */}
         <div className="lg:col-span-3 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
               <BarChart3 className="w-4 h-4 text-emerald-500" />
-              Published Posts
+              Your Posts on Nostr
             </h2>
-            {publishedPosts.length > 5 && (
-              <Link to="/queue">
+            {relayAnalyticsPosts.length > 8 && (
+              <Link to="/analytics">
                 <Button variant="ghost" size="sm" className="gap-1 text-xs h-7">
                   View all <ArrowRight className="w-3 h-3" />
                 </Button>
@@ -870,7 +834,24 @@ export default function Dashboard() {
             )}
           </div>
 
-          {publishedPosts.length === 0 ? (
+          {relayPostsLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Card key={i}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start gap-3">
+                      <Skeleton className="w-7 h-7 rounded-md" />
+                      <div className="flex-1 space-y-2">
+                        <Skeleton className="h-4 w-3/4" />
+                        <Skeleton className="h-3 w-1/3" />
+                        <Skeleton className="h-3 w-full" />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : relayAnalyticsPosts.length === 0 ? (
             <Card className="border-dashed">
               <CardContent className="py-12 text-center">
                 <TrendingUp className="w-10 h-10 mx-auto text-muted-foreground/20 mb-3" />
@@ -882,13 +863,10 @@ export default function Dashboard() {
             </Card>
           ) : (
             <div className="space-y-3">
-              {publishedPosts.slice(0, 8).map((post, i) => {
-                const PostIcon = getPostIcon(post);
-                const engagement = engagementMap?.get(post.publishedEventId!);
-                const hasImage = post.media.length > 0 || (post.postType === 'long' && post.headerImage);
-                const firstImage = post.postType === 'long' && post.headerImage
-                  ? post.headerImage
-                  : post.media[0]?.url;
+              {relayAnalyticsPosts.slice(0, 8).map((post, i) => {
+                const PostIcon = getRelayPostIcon(post);
+                const engagement = engagementMap?.get(post.eventId);
+                const schedulerPost = schedulerLookup.get(post.eventId);
 
                 return (
                   <Card
@@ -900,67 +878,61 @@ export default function Dashboard() {
                   >
                     <CardContent className="p-0">
                       <div className="flex min-w-0">
-                        {/* Image thumbnail — hidden on very small screens if content is tight */}
-                        {hasImage && firstImage && (
-                          <div className="w-16 sm:w-28 shrink-0 bg-muted">
-                            <img
-                              src={firstImage}
-                              alt=""
-                              className="w-full h-full object-cover min-h-[72px]"
-                            />
-                          </div>
-                        )}
-
                         {/* Content */}
                         <div className="flex-1 p-3 sm:p-4 min-w-0 space-y-1.5 overflow-hidden">
                           <div className="flex items-start gap-2">
                             <div className={cn(
                               'w-7 h-7 rounded-md flex items-center justify-center shrink-0',
-                              'bg-emerald-500/10',
+                              post.postType === 'repost' ? 'bg-blue-500/10' : 'bg-emerald-500/10',
                             )}>
-                              <PostIcon className="w-3.5 h-3.5 text-emerald-500" />
+                              <PostIcon className={cn('w-3.5 h-3.5', post.postType === 'repost' ? 'text-blue-500' : 'text-emerald-500')} />
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium truncate leading-tight">{getPostTitle(post)}</p>
+                              <p className="text-sm font-medium truncate leading-tight">{getRelayPostTitle(post)}</p>
                               <p className="text-[11px] text-muted-foreground mt-0.5">
-                                {post.publishedAt
-                                  ? formatDistanceToNow(new Date(post.publishedAt * 1000), { addSuffix: true })
-                                  : formatDistanceToNow(new Date(post.updatedAt * 1000), { addSuffix: true })
-                                }
+                                {formatDistanceToNow(new Date(post.publishedAt * 1000), { addSuffix: true })}
                                 {post.postType === 'long' && <Badge variant="secondary" className="ml-2 text-[9px] px-1.5 py-0">article</Badge>}
-                                {post.postType === 'promo' && post.importedListing && (
+                                {post.postType === 'promo' && (
                                   <Badge variant="secondary" className="ml-2 text-[9px] px-1.5 py-0">promo</Badge>
+                                )}
+                                {post.postType === 'repost' && (
+                                  <Badge variant="secondary" className="ml-2 text-[9px] px-1.5 py-0">repost</Badge>
+                                )}
+                                {schedulerPost && (
+                                  <Badge variant="outline" className="ml-1 text-[9px] px-1 py-0 border-primary/30 text-primary/70">scheduled</Badge>
                                 )}
                               </p>
                             </div>
                           </div>
 
                           {/* Content preview */}
-                          <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
-                            {post.content.slice(0, 140)}
-                          </p>
+                          {post.content && post.postType !== 'repost' && (
+                            <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+                              {post.content.slice(0, 140)}
+                            </p>
+                          )}
 
                           {/* Engagement + actions */}
                           <div className="flex items-center justify-between pt-1">
                             <EngagementRow engagement={engagement} isLoading={engagementLoading} />
 
                             <div className="flex items-center gap-0.5 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                              {post.publishedEventId && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <a
+                                    href={`https://njump.me/${nip19.noteEncode(post.eventId)}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    <Button variant="ghost" size="icon" className="w-7 h-7">
+                                      <Globe className="w-3.5 h-3.5" />
+                                    </Button>
+                                  </a>
+                                </TooltipTrigger>
+                                <TooltipContent className="text-xs">View on Nostr</TooltipContent>
+                              </Tooltip>
+                              {post.postType !== 'repost' && (
                                 <>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <a
-                                        href={`https://njump.me/${nip19.noteEncode(post.publishedEventId)}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                      >
-                                        <Button variant="ghost" size="icon" className="w-7 h-7">
-                                          <Globe className="w-3.5 h-3.5" />
-                                        </Button>
-                                      </a>
-                                    </TooltipTrigger>
-                                    <TooltipContent className="text-xs">View on Nostr</TooltipContent>
-                                  </Tooltip>
                                   <Tooltip>
                                     <TooltipTrigger asChild>
                                       <Button
@@ -969,45 +941,27 @@ export default function Dashboard() {
                                         className="w-7 h-7"
                                         onClick={(e) => {
                                           e.preventDefault();
-                                          handleRepost(post);
+                                          // Repost directly from relay data
+                                          if (!user) return;
+                                          publishEvent({
+                                            kind: 6,
+                                            content: '',
+                                            tags: [
+                                              ['e', post.eventId, '', 'mention'],
+                                              ['p', user.pubkey],
+                                            ],
+                                          }).then(() => {
+                                            toast({ title: 'Reposted!', description: 'Your note has been boosted on Nostr.' });
+                                          }).catch((error) => {
+                                            const msg = error instanceof Error ? error.message : 'Unknown error';
+                                            toast({ title: 'Repost failed', description: msg, variant: 'destructive' });
+                                          });
                                         }}
                                       >
                                         <Repeat2 className="w-3.5 h-3.5" />
                                       </Button>
                                     </TooltipTrigger>
                                     <TooltipContent className="text-xs">Repost / boost</TooltipContent>
-                                  </Tooltip>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="w-7 h-7"
-                                        onClick={(e) => {
-                                          e.preventDefault();
-                                          handleSaveTemplate(post);
-                                        }}
-                                      >
-                                        <BookmarkPlus className="w-3.5 h-3.5" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent className="text-xs">Save as template</TooltipContent>
-                                  </Tooltip>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="w-7 h-7 text-primary hover:text-primary"
-                                        onClick={(e) => {
-                                          e.preventDefault();
-                                          handlePromoteAgain(post);
-                                        }}
-                                      >
-                                        <Megaphone className="w-3.5 h-3.5" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent className="text-xs">Promote again</TooltipContent>
                                   </Tooltip>
                                 </>
                               )}
@@ -1025,7 +979,7 @@ export default function Dashboard() {
       </div>
 
       {/* ===== EMPTY STATE ===== */}
-      {posts.length === 0 && user && (
+      {posts.length === 0 && relayAnalyticsPosts.length === 0 && user && (
         <div className="space-y-6 animate-fade-in">
           <Separator />
           <div className="text-center space-y-2">

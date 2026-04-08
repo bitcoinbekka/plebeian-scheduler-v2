@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import {
   BarChart3, TrendingUp, Heart, Zap, Users, Clock, CalendarDays,
   MessageSquare, ShoppingBag, Newspaper, Globe, ChevronDown, ChevronUp,
-  Crown, Target, Activity, Flame, Award, Eye, X, ArrowLeft,
+  Crown, Target, Activity, Flame, Award, Eye, X, ArrowLeft, Repeat2,
 } from 'lucide-react';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -41,6 +41,7 @@ const CHART_COLORS = {
   promo: 'hsl(334, 100%, 58%)',
   short: 'hsl(221, 83%, 53%)',
   long: 'hsl(270, 65%, 55%)',
+  repost: 'hsl(190, 80%, 50%)',
 };
 
 function formatSats(sats: number): string {
@@ -51,6 +52,7 @@ function formatSats(sats: number): string {
 
 function getPostTitle(post: AnalyticsPost): string {
   if (post.postType === 'long' && post.title) return post.title;
+  if (post.postType === 'repost') return 'Repost';
   if (post.listingTitle) return post.listingTitle;
   return post.content.slice(0, 60) || 'Empty note';
 }
@@ -58,6 +60,7 @@ function getPostTitle(post: AnalyticsPost): string {
 function getPostIcon(post: AnalyticsPost) {
   if (post.postType === 'long') return Newspaper;
   if (post.postType === 'promo') return ShoppingBag;
+  if (post.postType === 'repost') return Repeat2;
   return MessageSquare;
 }
 
@@ -383,13 +386,13 @@ function Analytics() {
 
     return Object.entries(stats).map(([type, data]) => ({
       type,
-      label: type === 'promo' ? 'Promo Notes' : type === 'long' ? 'Articles' : 'Short Notes',
+      label: type === 'promo' ? 'Promo Notes' : type === 'long' ? 'Articles' : type === 'repost' ? 'Reposts' : 'Short Notes',
       count: data.count,
       reactions: data.reactions,
       sats: data.sats,
       avgReactions: data.count > 0 ? Math.round((data.reactions / data.count) * 10) / 10 : 0,
       avgSats: data.count > 0 ? Math.round(data.sats / data.count) : 0,
-      fill: type === 'promo' ? CHART_COLORS.promo : type === 'long' ? CHART_COLORS.long : CHART_COLORS.short,
+      fill: type === 'promo' ? CHART_COLORS.promo : type === 'long' ? CHART_COLORS.long : type === 'repost' ? CHART_COLORS.repost : CHART_COLORS.short,
     })).sort((a, b) => (b.avgReactions + b.avgSats * 0.01) - (a.avgReactions + a.avgSats * 0.01));
   }, [filteredPosts, engagementMap]);
 

@@ -49,8 +49,8 @@ export function usePostEngagement(eventId: string | null | undefined) {
       const events = await nostr.query([{
         kinds: [7, 9735],
         '#e': [eventId],
-        limit: 200,
-      }], { signal: AbortSignal.timeout(8000) });
+        limit: 500,
+      }], { signal: AbortSignal.timeout(10000) });
 
       const reactionEvents = events.filter(e => e.kind === 7);
       const zapEvents = events.filter(e => e.kind === 9735);
@@ -122,12 +122,12 @@ export function useBatchEngagement(eventIds: string[]) {
     queryFn: async () => {
       if (eventIds.length === 0) return new Map<string, PostEngagement>();
 
-      // Single query for all event IDs
+      // Single query for all event IDs — high limit to capture all engagement
       const events = await nostr.query([{
         kinds: [7, 9735],
         '#e': eventIds,
-        limit: 500,
-      }], { signal: AbortSignal.timeout(10000) });
+        limit: 2000,
+      }], { signal: AbortSignal.timeout(15000) });
 
       // Group by referenced event ID
       const byEventId = new Map<string, { reactions: NostrEvent[]; zaps: NostrEvent[] }>();
