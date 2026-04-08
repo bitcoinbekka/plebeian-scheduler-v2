@@ -4,10 +4,12 @@ import {
   FileText,
   ShoppingBag,
   MessageSquare,
+  Newspaper,
   Trash2,
   PenSquare,
   CalendarClock,
   Clock,
+  Repeat2,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -26,12 +28,28 @@ import {
 import { useScheduler } from '@/contexts/SchedulerContext';
 import { useToast } from '@/hooks/useToast';
 import { formatDistanceToNow } from 'date-fns';
+import { cn } from '@/lib/utils';
 import type { SchedulerPost } from '@/lib/types';
 
-/** Get a human-friendly title for a promo note */
+/** Get a human-friendly title for a draft */
 function getPostTitle(post: SchedulerPost): string {
+  if (post.postType === 'long' && post.title) return post.title;
   if (post.importedListing?.title) return post.importedListing.title;
   return post.content.slice(0, 80) || 'Empty note';
+}
+
+/** Get the icon for a post type */
+function getPostIcon(post: SchedulerPost) {
+  if (post.postType === 'long') return Newspaper;
+  if (post.postType === 'promo') return ShoppingBag;
+  return MessageSquare;
+}
+
+/** Get badge styling for a post type */
+function getPostTypeBadge(post: SchedulerPost) {
+  if (post.postType === 'long') return { label: 'Long-form Article', shortLabel: 'Article', kind: 'kind 30023', color: 'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20' };
+  if (post.postType === 'promo') return { label: 'Promo Note', shortLabel: 'Promo', kind: 'kind 1', color: 'bg-primary/10 text-primary border-primary/20' };
+  return { label: 'Short Note', shortLabel: 'Note', kind: 'kind 1', color: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20' };
 }
 
 export default function Drafts() {
@@ -94,33 +112,49 @@ export default function Drafts() {
       ) : (
         <div className="space-y-3">
           {drafts.map(post => {
-            const hasListing = !!post.importedListing;
             const title = getPostTitle(post);
-            const preview = post.content.slice(0, 120) || 'No content';
+            const preview = post.postType === 'long' && post.title
+              ? post.content.slice(0, 120) || 'No content'
+              : post.content.slice(0, 120) || 'No content';
+            const PostIcon = getPostIcon(post);
+            const typeBadge = getPostTypeBadge(post);
 
             return (
               <Card key={post.id} className="hover:shadow-md transition-shadow duration-200 group">
                 <CardContent className="p-4">
                   <div className="flex items-start gap-4">
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${hasListing ? 'bg-primary/10 text-primary' : 'bg-blue-500/10 text-blue-500'}`}>
-                      {hasListing ? <ShoppingBag className="w-5 h-5" /> : <MessageSquare className="w-5 h-5" />}
+                    <div className={cn(
+                      'w-10 h-10 rounded-lg flex items-center justify-center shrink-0',
+                      post.postType === 'long' ? 'bg-violet-500/10' :
+                      post.postType === 'promo' ? 'bg-primary/10' :
+                      'bg-blue-500/10'
+                    )}>
+                      <PostIcon className={cn(
+                        'w-5 h-5',
+                        post.postType === 'long' ? 'text-violet-500' :
+                        post.postType === 'promo' ? 'text-primary' :
+                        'text-blue-500'
+                      )} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          {hasListing && (
-                            <h3 className="font-semibold text-sm truncate">{title}</h3>
-                          )}
+                          <h3 className="font-semibold text-sm truncate">{title}</h3>
                           <p className="text-sm text-muted-foreground line-clamp-2 mt-0.5">
                             {preview}
                           </p>
                         </div>
-                        <Badge variant="outline" className="shrink-0 text-xs">
-                          {hasListing ? 'Promo' : 'Note'}
-                        </Badge>
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          <Badge variant="outline" className={cn('text-[10px] border', typeBadge.color)}>
+                            {typeBadge.shortLabel}
+                          </Badge>
+                          <span className="text-[9px] text-muted-foreground/60 font-mono">
+                            {typeBadge.kind}
+                          </span>
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-4 mt-3">
+                      <div className="flex items-center gap-3 mt-3 flex-wrap">
                         <span className="text-xs text-muted-foreground flex items-center gap-1">
                           <Clock className="w-3 h-3" />
                           {formatDistanceToNow(new Date(post.updatedAt * 1000), { addSuffix: true })}
@@ -135,6 +169,13 @@ export default function Drafts() {
                         {post.media.length > 0 && (
                           <span className="text-xs text-muted-foreground">
                             {post.media.length} image{post.media.length !== 1 ? 's' : ''}
+                          </span>
+                        )}
+
+                        {post.recurringInterval > 0 && (
+                          <span className="flex items-center gap-1 text-xs text-violet-500">
+                            <Repeat2 className="w-3 h-3" />
+                            Recurring
                           </span>
                         )}
 

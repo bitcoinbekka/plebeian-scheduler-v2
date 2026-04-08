@@ -1,4 +1,4 @@
-import { useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useSeoMeta } from '@unhead/react';
 import { Link, useNavigate } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
@@ -254,21 +254,25 @@ export default function Dashboard() {
   const { data: relayPosts } = useMyPublishedPosts();
   const { leads: topLeads } = useLeadTracker();
 
-  // Relay engagement for sparkline chart (last 14 days)
+  // Engagement period selector state (7, 14, or 30 days)
+  const [engagementDays, setEngagementDays] = useState<7 | 14 | 30>(14);
+
+  // Relay engagement for sparkline chart
   const relayEventIds = useMemo(
     () => (relayPosts || []).map(e => e.id),
     [relayPosts],
   );
   const { data: relayEngMap } = useBatchEngagement(relayEventIds);
 
-  // 14-day engagement sparkline data
+  // Dynamic engagement sparkline data based on selected period
   const sparklineData = useMemo(() => {
     if (!relayPosts || !relayEngMap) return [];
     const buckets: Record<string, { date: string; reactions: number; sats: number }> = {};
-    for (let i = 13; i >= 0; i--) {
+    for (let i = engagementDays - 1; i >= 0; i--) {
       const d = startOfDay(subDays(new Date(), i));
       const key = format(d, 'yyyy-MM-dd');
-      buckets[key] = { date: format(d, 'MMM d'), reactions: 0, sats: 0 };
+      // For 30 days use shorter date labels
+      buckets[key] = { date: engagementDays > 14 ? format(d, 'M/d') : format(d, 'MMM d'), reactions: 0, sats: 0 };
     }
     for (const event of relayPosts) {
       const key = format(startOfDay(new Date(event.created_at * 1000)), 'yyyy-MM-dd');
@@ -280,7 +284,7 @@ export default function Dashboard() {
       }
     }
     return Object.values(buckets);
-  }, [relayPosts, relayEngMap]);
+  }, [relayPosts, relayEngMap, engagementDays]);
 
   // Mini weekly heatmap (7 days x 24 hours)
   const miniHeatmap = useMemo(() => {
@@ -469,86 +473,114 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* ===== ENGAGEMENT SPARKLINE + MINI HEATMAP + TOP LEADS ===== */}
-      {(sparklineData.length > 0 || (topLeads && topLeads.length > 0)) && (
+      {/* ===== ENGAGEMENT CHART (full width, shorter) ===== */}
+      {sparklineData.length > 0 && (
+        <Card>
+          <CardHeader className="pb-1 pt-3 px-4">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <TrendingUp className="w-3.5 h-3.5 text-primary" />
+                Engagement
+              </CardTitle>
+              <div className="flex items-center gap-1.5">
+                {([7, 14, 30] as const).map(days => (
+                  <Button
+                    key={days}
+                    variant={engagementDays === days ? 'default' : 'ghost'}
+                    size="sm"
+                    className={cn(
+                      'text-[10px] h-6 px-2.5 min-w-0',
+                      engagementDays === days && 'shadow-sm',
+                    )}
+                    onClick={() => setEngagementDays(days)}
+                  >
+                    {days}d
+                  </Button>
+                ))}
+                <Link to="/analytics" className="ml-1">
+                  <Button variant="ghost" size="sm" className="gap-1 text-xs h-6">
+                    Details <ArrowRight className="w-3 h-3" />
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pb-2 px-4">
+            <div className="h-20">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={sparklineData} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
+                  <defs>
+                    <linearGradient id="dashGradReactions" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(347, 77%, 60%)" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="hsl(347, 77%, 60%)" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="dashGradSats" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(38, 92%, 50%)" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="hsl(38, 92%, 50%)" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 8 }}
+                    interval={engagementDays <= 7 ? 0 : engagementDays <= 14 ? 1 : 'preserveStartEnd'}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <RechartsTooltip
+                    contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: '11px' }}
+                  />
+                  <Area type="monotone" dataKey="reactions" stroke="hsl(347, 77%, 60%)" fill="url(#dashGradReactions)" strokeWidth={1.5} name="Reactions" />
+                  <Area type="monotone" dataKey="sats" stroke="hsl(38, 92%, 50%)" fill="url(#dashGradSats)" strokeWidth={1.5} name="Sats" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ===== HEATMAP + TOP LEADS (side by side) ===== */}
+      {((miniHeatmap) || (topLeads && topLeads.length > 0)) && (
         <div className="grid lg:grid-cols-3 gap-4">
-          {/* Engagement sparkline */}
-          {sparklineData.length > 0 && (
+          {/* Mini heatmap card */}
+          {miniHeatmap && (
             <Card className="lg:col-span-2">
-              <CardHeader className="pb-1">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                    <TrendingUp className="w-3.5 h-3.5 text-primary" />
-                    14-Day Engagement
-                  </CardTitle>
-                  <Link to="/analytics">
-                    <Button variant="ghost" size="sm" className="gap-1 text-xs h-6">
-                      Details <ArrowRight className="w-3 h-3" />
-                    </Button>
-                  </Link>
-                </div>
+              <CardHeader className="pb-1 pt-3 px-4">
+                <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Flame className="w-3.5 h-3.5 text-primary" />
+                  Best Time to Post
+                </CardTitle>
               </CardHeader>
-              <CardContent className="pb-3">
-                <div className="h-32">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={sparklineData} margin={{ top: 5, right: 5, bottom: 0, left: 5 }}>
-                      <defs>
-                        <linearGradient id="dashGradReactions" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="hsl(347, 77%, 60%)" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="hsl(347, 77%, 60%)" stopOpacity={0} />
-                        </linearGradient>
-                        <linearGradient id="dashGradSats" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="hsl(38, 92%, 50%)" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="hsl(38, 92%, 50%)" stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
-                      <XAxis dataKey="date" tick={{ fontSize: 9 }} interval="preserveStartEnd" axisLine={false} tickLine={false} />
-                      <RechartsTooltip
-                        contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: '11px' }}
-                      />
-                      <Area type="monotone" dataKey="reactions" stroke="hsl(347, 77%, 60%)" fill="url(#dashGradReactions)" strokeWidth={2} name="Reactions" />
-                      <Area type="monotone" dataKey="sats" stroke="hsl(38, 92%, 50%)" fill="url(#dashGradSats)" strokeWidth={2} name="Sats" />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-                {/* Mini heatmap below chart */}
-                {miniHeatmap && (
-                  <div className="mt-3 pt-3 border-t">
-                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1">
-                      <Flame className="w-3 h-3 text-primary" /> Engagement Heatmap
-                    </p>
-                    <div className="space-y-px">
-                      {miniHeatmap.labels.map((day, dayIdx) => (
-                        <div key={day} className="flex items-center gap-0.5">
-                          <span className="text-[8px] text-muted-foreground w-6 text-right shrink-0">{day}</span>
-                          <div className="flex flex-1 gap-px">
-                            {Array.from({ length: 24 }).map((_, hour) => {
-                              const val = miniHeatmap.grid[dayIdx][hour];
-                              const intensity = val / miniHeatmap.max;
-                              return (
-                                <Tooltip key={hour}>
-                                  <TooltipTrigger asChild>
-                                    <div
-                                      className="flex-1 aspect-square rounded-[1px] min-w-[4px]"
-                                      style={{
-                                        backgroundColor: intensity > 0
-                                          ? `hsl(334 100% 58% / ${0.1 + intensity * 0.8})`
-                                          : 'hsl(var(--muted) / 0.3)',
-                                      }}
-                                    />
-                                  </TooltipTrigger>
-                                  <TooltipContent className="text-[10px]">
-                                    {day} {hour % 12 || 12}{hour >= 12 ? 'pm' : 'am'}: score {val}
-                                  </TooltipContent>
-                                </Tooltip>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
+              <CardContent className="pb-3 px-4">
+                <div className="space-y-px">
+                  {miniHeatmap.labels.map((day, dayIdx) => (
+                    <div key={day} className="flex items-center gap-0.5">
+                      <span className="text-[8px] text-muted-foreground w-6 text-right shrink-0">{day}</span>
+                      <div className="flex flex-1 gap-px">
+                        {Array.from({ length: 24 }).map((_, hour) => {
+                          const val = miniHeatmap.grid[dayIdx][hour];
+                          const intensity = val / miniHeatmap.max;
+                          return (
+                            <Tooltip key={hour}>
+                              <TooltipTrigger asChild>
+                                <div
+                                  className="flex-1 aspect-square rounded-[1px] min-w-[4px]"
+                                  style={{
+                                    backgroundColor: intensity > 0
+                                      ? `hsl(334 100% 58% / ${0.1 + intensity * 0.8})`
+                                      : 'hsl(var(--muted) / 0.3)',
+                                  }}
+                                />
+                              </TooltipTrigger>
+                              <TooltipContent className="text-[10px]">
+                                {day} {hour % 12 || 12}{hour >= 12 ? 'pm' : 'am'}: score {val}
+                              </TooltipContent>
+                            </Tooltip>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  ))}
+                </div>
               </CardContent>
             </Card>
           )}
@@ -556,7 +588,7 @@ export default function Dashboard() {
           {/* Top Leads mini card */}
           {topLeads && topLeads.length > 0 && (
             <Card>
-              <CardHeader className="pb-1">
+              <CardHeader className="pb-1 pt-3 px-4">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                     <Users className="w-3.5 h-3.5 text-violet-500" />

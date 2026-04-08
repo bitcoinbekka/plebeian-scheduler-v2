@@ -10,11 +10,29 @@ import {
   Newspaper,
   Clock,
   PenSquare,
+  Repeat2,
+  Server,
+  Monitor,
+  Trash2,
+  Send,
+  FileText,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { useScheduler } from '@/contexts/SchedulerContext';
+import { useToast } from '@/hooks/useToast';
 import {
   format,
   startOfMonth,
@@ -27,6 +45,7 @@ import {
   startOfWeek,
   endOfWeek,
   isToday,
+  formatDistanceToNow,
 } from 'date-fns';
 import { cn } from '@/lib/utils';
 import type { SchedulerPost } from '@/lib/types';
@@ -53,13 +72,29 @@ function getPostIcon(post: SchedulerPost) {
   return MessageSquare;
 }
 
+function getRecurringLabel(interval: number): string {
+  if (interval === 86400) return 'Daily';
+  if (interval === 86400 * 3) return 'Every 3 days';
+  if (interval === 604800) return 'Weekly';
+  if (interval < 3600) return `Every ${Math.round(interval / 60)} min`;
+  if (interval < 86400) return `Every ${Math.round(interval / 3600)} hours`;
+  return `Every ${Math.round(interval / 86400)} days`;
+}
+
+function getPostTypeBadge(post: SchedulerPost) {
+  if (post.postType === 'long') return { label: 'Article', color: 'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20' };
+  if (post.postType === 'promo') return { label: 'Promo', color: 'bg-primary/10 text-primary border-primary/20' };
+  return { label: 'Note', color: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20' };
+}
+
 export default function CalendarView() {
   useSeoMeta({
     title: 'Calendar - Plebeian Scheduler',
     description: 'View your scheduled posts in a calendar layout.',
   });
 
-  const { posts } = useScheduler();
+  const { posts, removePost } = useScheduler();
+  const { toast } = useToast();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
 
@@ -239,39 +274,148 @@ export default function CalendarView() {
             selectedDayPosts.map(post => {
               const PostIcon = getPostIcon(post);
               const ts = post.scheduledAt ?? post.createdAt;
+              const isServer = !!post.serverEventId;
+              const typeBadge = getPostTypeBadge(post);
 
               return (
-                <Card key={post.id} className="hover:shadow-md transition-shadow">
-                  <CardContent className="p-3">
-                    <div className="flex items-start gap-3">
-                      <div className={cn(
-                        'w-8 h-8 rounded-md flex items-center justify-center shrink-0',
-                        STATUS_COLORS[post.status] ? 'bg-primary/15' : 'bg-blue-500/15'
-                      )}>
-                        <PostIcon className="w-4 h-4 text-primary" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{getPostTitle(post)}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Clock className="w-3 h-3 text-muted-foreground" />
-                          <span className="text-xs text-muted-foreground">
-                            {format(new Date(ts * 1000), 'h:mm a')}
-                          </span>
-                          <Badge variant="outline" className="text-[10px] h-5">
-                            {post.status}
-                          </Badge>
+                <Card key={post.id} className="hover:shadow-md transition-shadow group overflow-hidden">
+                  <CardContent className="p-0">
+                    {/* Clickable main area → opens editor */}
+                    <Link to={`/compose?edit=${post.id}`} className="block p-3 pb-2">
+                      <div className="flex items-start gap-3">
+                        <div className={cn(
+                          'w-9 h-9 rounded-lg flex items-center justify-center shrink-0',
+                          post.status === 'published' ? 'bg-emerald-500/10' :
+                          post.status === 'failed' ? 'bg-destructive/10' :
+                          'bg-primary/10'
+                        )}>
+                          <PostIcon className={cn(
+                            'w-4 h-4',
+                            post.status === 'published' ? 'text-emerald-500' :
+                            post.status === 'failed' ? 'text-destructive' :
+                            'text-primary'
+                          )} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate leading-tight">{getPostTitle(post)}</p>
+
+                          {/* Metadata row */}
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <Clock className="w-3 h-3" />
+                              {format(new Date(ts * 1000), 'h:mm a')}
+                            </span>
+
+                            <Badge variant="outline" className={cn('text-[10px] h-5 border', typeBadge.color)}>
+                              {typeBadge.label}
+                            </Badge>
+
+                            <Badge
+                              variant={post.status === 'published' ? 'default' : post.status === 'failed' ? 'destructive' : 'outline'}
+                              className={cn(
+                                'text-[10px] h-5',
+                                post.status === 'published' && 'bg-emerald-500 hover:bg-emerald-500/90',
+                              )}
+                            >
+                              {post.status}
+                            </Badge>
+                          </div>
+
+                          {/* Recurring indicator */}
+                          {post.recurringInterval > 0 && (
+                            <div className="flex items-center gap-1.5 mt-1.5">
+                              <Repeat2 className="w-3 h-3 text-violet-500" />
+                              <span className="text-[11px] text-violet-600 dark:text-violet-400 font-medium">
+                                {getRecurringLabel(post.recurringInterval)}
+                              </span>
+                              {post.recurringCount > 0 && (
+                                <span className="text-[10px] text-muted-foreground">
+                                  ({post.recurringCount}/{post.recurringLimit || '∞'} published)
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Server/local indicator */}
+                          {post.status === 'scheduled' && (
+                            <span className={cn(
+                              'flex items-center gap-1 text-[10px] mt-1',
+                              isServer ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
+                            )}>
+                              {isServer ? <Server className="w-2.5 h-2.5" /> : <Monitor className="w-2.5 h-2.5" />}
+                              {isServer ? 'Server-side — safe to close browser' : 'Local — keep tab open'}
+                            </span>
+                          )}
+
+                          {/* Content preview */}
+                          {post.content && (
+                            <p className="text-[11px] text-muted-foreground line-clamp-2 mt-1.5 leading-relaxed">
+                              {post.content.slice(0, 120)}
+                            </p>
+                          )}
                         </div>
                       </div>
+                    </Link>
+
+                    {/* Action buttons */}
+                    <div className="flex items-center gap-1 px-3 pb-2.5 pt-1 border-t border-transparent group-hover:border-border transition-colors">
                       <Link to={`/compose?edit=${post.id}`}>
-                        <Button variant="ghost" size="icon" className="w-7 h-7">
-                          <PenSquare className="w-3.5 h-3.5" />
+                        <Button variant="ghost" size="sm" className="gap-1.5 h-7 text-xs">
+                          <PenSquare className="w-3 h-3" />
+                          Edit
                         </Button>
                       </Link>
+
+                      {post.status === 'scheduled' && (
+                        <Badge variant="secondary" className="text-[10px] h-5 ml-auto">
+                          {post.scheduledAt && formatDistanceToNow(new Date(post.scheduledAt * 1000), { addSuffix: true })}
+                        </Badge>
+                      )}
+
+                      {(post.status === 'draft' || post.status === 'scheduled' || post.status === 'failed') && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive hover:text-destructive ml-auto">
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete this post?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This will permanently remove the post from your schedule.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => {
+                                  removePost(post.id);
+                                  toast({ title: 'Post deleted' });
+                                }}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
               );
             })
+          )}
+
+          {/* Add post for this day */}
+          {selectedDate && (
+            <Link to="/compose">
+              <Button variant="outline" className="w-full gap-2 border-dashed text-muted-foreground hover:text-foreground">
+                <PenSquare className="w-3.5 h-3.5" />
+                New post for {format(selectedDate, 'MMM d')}
+              </Button>
+            </Link>
           )}
         </div>
       </div>

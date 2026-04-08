@@ -12,11 +12,15 @@
  * export default (Request, context) => Response function format.
  */
 
-// Default relays to publish to if none specified
+// Default relays to publish to if none specified.
+// Includes well-connected relays that major clients (Primal, Damus, etc.) index from.
 const DEFAULT_RELAYS = [
   "wss://relay.ditto.pub",
   "wss://relay.primal.net",
   "wss://relay.damus.io",
+  "wss://nos.lol",
+  "wss://relay.nostr.band",
+  "wss://nostr.wine",
 ];
 
 const STORE_NAME = "scheduled-events";

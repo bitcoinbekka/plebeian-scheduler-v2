@@ -52,6 +52,7 @@ import { useScheduler } from '@/contexts/SchedulerContext';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useUploadFile } from '@/hooks/useUploadFile';
+import { useAppContext } from '@/hooks/useAppContext';
 import { useToast } from '@/hooks/useToast';
 import { buildEvent } from '@/lib/eventBuilder';
 import { scheduleEvent } from '@/lib/schedulerApi';
@@ -78,6 +79,7 @@ export default function Compose() {
   const { updatePost, removePost, posts } = useScheduler();
   const { mutateAsync: publishEvent, isPending: isPublishing } = useNostrPublish();
   const { mutateAsync: uploadFile } = useUploadFile();
+  const { config } = useAppContext();
 
   const editId = searchParams.get('edit');
   const headerImageInputRef = useRef<HTMLInputElement>(null);
@@ -150,11 +152,17 @@ export default function Compose() {
       created_at: eventData.created_at,
     });
 
+    // Gather the user's write relays so the server publishes to all of them
+    const writeRelays = config.relayMetadata.relays
+      .filter(r => r.write)
+      .map(r => r.url);
+
     // Send the pre-signed event to the server for future publishing
     try {
       const result = await scheduleEvent({
         signedEvent,
         publishAt: scheduledAt,
+        relays: writeRelays.length > 0 ? writeRelays : undefined,
       });
 
       const updated: SchedulerPost = {
