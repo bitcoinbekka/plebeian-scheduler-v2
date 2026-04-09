@@ -438,15 +438,28 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* ===== ENGAGEMENT CHART (full width, shorter) ===== */}
+      {/* ===== ENGAGEMENT CHART (full width, taller with legend) ===== */}
       {sparklineData.length > 0 && (
         <Card>
-          <CardHeader className="pb-1 pt-3 px-4">
+          <CardHeader className="pb-2 pt-4 px-4">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                <TrendingUp className="w-3.5 h-3.5 text-primary" />
-                Engagement
-              </CardTitle>
+              <div className="flex items-center gap-3">
+                <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <TrendingUp className="w-3.5 h-3.5 text-primary" />
+                  Engagement
+                </CardTitle>
+                {/* Legend */}
+                <div className="flex items-center gap-3">
+                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80" />
+                    Reactions
+                  </span>
+                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80" />
+                    Sats
+                  </span>
+                </div>
+              </div>
               <div className="flex items-center gap-1.5">
                 {([7, 14, 30] as const).map(days => (
                   <Button
@@ -470,8 +483,8 @@ export default function Dashboard() {
               </div>
             </div>
           </CardHeader>
-          <CardContent className="pb-2 px-4">
-            <div className="h-20">
+          <CardContent className="pb-3 px-4">
+            <div className="h-40">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={sparklineData} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
                   <defs>
@@ -486,7 +499,7 @@ export default function Dashboard() {
                   </defs>
                   <XAxis
                     dataKey="date"
-                    tick={{ fontSize: 8 }}
+                    tick={{ fontSize: 9 }}
                     interval={engagementDays <= 7 ? 0 : engagementDays <= 14 ? 1 : 'preserveStartEnd'}
                     axisLine={false}
                     tickLine={false}
@@ -494,8 +507,8 @@ export default function Dashboard() {
                   <RechartsTooltip
                     contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: '11px' }}
                   />
-                  <Area type="monotone" dataKey="reactions" stroke="hsl(347, 77%, 60%)" fill="url(#dashGradReactions)" strokeWidth={1.5} name="Reactions" />
-                  <Area type="monotone" dataKey="sats" stroke="hsl(38, 92%, 50%)" fill="url(#dashGradSats)" strokeWidth={1.5} name="Sats" />
+                  <Area type="monotone" dataKey="reactions" stroke="hsl(347, 77%, 60%)" fill="url(#dashGradReactions)" strokeWidth={2} name="Reactions" />
+                  <Area type="monotone" dataKey="sats" stroke="hsl(38, 92%, 50%)" fill="url(#dashGradSats)" strokeWidth={2} name="Sats" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -503,23 +516,39 @@ export default function Dashboard() {
         </Card>
       )}
 
-      {/* ===== HEATMAP + TOP LEADS (side by side) ===== */}
+      {/* ===== HEATMAP + TOP LEADS (equal 50/50 split) ===== */}
       {((miniHeatmap) || (topLeads && topLeads.length > 0)) && (
-        <div className="grid lg:grid-cols-3 gap-4">
-          {/* Mini heatmap card */}
+        <div className="grid lg:grid-cols-2 gap-4">
+          {/* Heatmap card with hour labels and legend */}
           {miniHeatmap && (
-            <Card className="lg:col-span-2">
-              <CardHeader className="pb-1 pt-3 px-4">
+            <Card>
+              <CardHeader className="pb-2 pt-4 px-4">
                 <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                   <Flame className="w-3.5 h-3.5 text-primary" />
                   Best Time to Post
                 </CardTitle>
               </CardHeader>
-              <CardContent className="pb-3 px-4">
-                <div className="space-y-px">
+              <CardContent className="pb-4 px-4">
+                <div className="space-y-0.5">
+                  {/* Hour labels row */}
+                  <div className="flex items-center gap-0.5">
+                    <span className="w-7 shrink-0" />
+                    <div className="flex flex-1 gap-px">
+                      {Array.from({ length: 24 }).map((_, hour) => (
+                        <div key={hour} className="flex-1 text-center">
+                          {hour % 6 === 0 && (
+                            <span className="text-[7px] text-muted-foreground/70">
+                              {hour === 0 ? '12a' : hour === 6 ? '6a' : hour === 12 ? '12p' : '6p'}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Grid rows */}
                   {miniHeatmap.labels.map((day, dayIdx) => (
                     <div key={day} className="flex items-center gap-0.5">
-                      <span className="text-[8px] text-muted-foreground w-6 text-right shrink-0">{day}</span>
+                      <span className="text-[9px] text-muted-foreground w-7 text-right shrink-0">{day}</span>
                       <div className="flex flex-1 gap-px">
                         {Array.from({ length: 24 }).map((_, hour) => {
                           const val = miniHeatmap.grid[dayIdx][hour];
@@ -528,7 +557,7 @@ export default function Dashboard() {
                             <Tooltip key={hour}>
                               <TooltipTrigger asChild>
                                 <div
-                                  className="flex-1 aspect-square rounded-[1px] min-w-[4px]"
+                                  className="flex-1 aspect-square rounded-[2px] min-w-[6px] transition-colors"
                                   style={{
                                     backgroundColor: intensity > 0
                                       ? `hsl(334 100% 58% / ${0.1 + intensity * 0.8})`
@@ -537,7 +566,7 @@ export default function Dashboard() {
                                 />
                               </TooltipTrigger>
                               <TooltipContent className="text-[10px]">
-                                {day} {hour % 12 || 12}{hour >= 12 ? 'pm' : 'am'}: score {val}
+                                {day} {hour % 12 || 12}:00{hour >= 12 ? 'pm' : 'am'} — engagement score: {val}
                               </TooltipContent>
                             </Tooltip>
                           );
@@ -546,14 +575,25 @@ export default function Dashboard() {
                     </div>
                   ))}
                 </div>
+                {/* Legend */}
+                <div className="flex items-center justify-between mt-3 pt-2 border-t border-border/50">
+                  <p className="text-[9px] text-muted-foreground">Weighted score: reactions + zaps x3</p>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[8px] text-muted-foreground">Less</span>
+                    {[0.1, 0.3, 0.5, 0.7, 0.9].map(opacity => (
+                      <div key={opacity} className="w-2.5 h-2.5 rounded-[2px]" style={{ backgroundColor: `hsl(334 100% 58% / ${opacity})` }} />
+                    ))}
+                    <span className="text-[8px] text-muted-foreground">More</span>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           )}
 
-          {/* Top Leads mini card */}
+          {/* Top Leads card */}
           {topLeads && topLeads.length > 0 && (
             <Card>
-              <CardHeader className="pb-1 pt-3 px-4">
+              <CardHeader className="pb-2 pt-4 px-4">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                     <Users className="w-3.5 h-3.5 text-violet-500" />
@@ -566,15 +606,17 @@ export default function Dashboard() {
                   </Link>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-1">
+              <CardContent className="space-y-1 pb-4">
                 {topLeads.slice(0, 5).map((lead, i) => (
                   <LeadMiniRow key={lead.pubkey} pubkey={lead.pubkey} score={lead.score} sats={lead.totalSats} rank={i + 1} />
                 ))}
-                <Link to="/leads" className="block pt-1">
-                  <p className="text-[10px] text-primary hover:underline text-center">
-                    View all {topLeads.length} leads
-                  </p>
-                </Link>
+                {topLeads.length > 5 && (
+                  <Link to="/leads" className="block pt-2">
+                    <p className="text-[10px] text-primary hover:underline text-center">
+                      View all {topLeads.length} leads →
+                    </p>
+                  </Link>
+                )}
               </CardContent>
             </Card>
           )}
@@ -825,10 +867,10 @@ export default function Dashboard() {
               <BarChart3 className="w-4 h-4 text-emerald-500" />
               Your Posts on Nostr
             </h2>
-            {relayAnalyticsPosts.length > 8 && (
+            {relayAnalyticsPosts.length > 5 && (
               <Link to="/analytics">
                 <Button variant="ghost" size="sm" className="gap-1 text-xs h-7">
-                  View all <ArrowRight className="w-3 h-3" />
+                  All {relayAnalyticsPosts.length} posts <ArrowRight className="w-3 h-3" />
                 </Button>
               </Link>
             )}
@@ -862,8 +904,8 @@ export default function Dashboard() {
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-3">
-              {relayAnalyticsPosts.slice(0, 8).map((post, i) => {
+            <div className="space-y-2">
+              {relayAnalyticsPosts.slice(0, 5).map((post, i) => {
                 const PostIcon = getRelayPostIcon(post);
                 const engagement = engagementMap?.get(post.eventId);
                 const schedulerPost = schedulerLookup.get(post.eventId);
@@ -907,13 +949,13 @@ export default function Dashboard() {
 
                           {/* Content preview */}
                           {post.content && post.postType !== 'repost' && (
-                            <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
-                              {post.content.slice(0, 140)}
+                            <p className="text-xs text-muted-foreground line-clamp-1 leading-relaxed">
+                              {post.content.slice(0, 120)}
                             </p>
                           )}
 
                           {/* Engagement + actions */}
-                          <div className="flex items-center justify-between pt-1">
+                          <div className="flex items-center justify-between pt-0.5">
                             <EngagementRow engagement={engagement} isLoading={engagementLoading} />
 
                             <div className="flex items-center gap-0.5 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
@@ -932,38 +974,35 @@ export default function Dashboard() {
                                 <TooltipContent className="text-xs">View on Nostr</TooltipContent>
                               </Tooltip>
                               {post.postType !== 'repost' && (
-                                <>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="w-7 h-7"
-                                        onClick={(e) => {
-                                          e.preventDefault();
-                                          // Repost directly from relay data
-                                          if (!user) return;
-                                          publishEvent({
-                                            kind: 6,
-                                            content: '',
-                                            tags: [
-                                              ['e', post.eventId, '', 'mention'],
-                                              ['p', user.pubkey],
-                                            ],
-                                          }).then(() => {
-                                            toast({ title: 'Reposted!', description: 'Your note has been boosted on Nostr.' });
-                                          }).catch((error) => {
-                                            const msg = error instanceof Error ? error.message : 'Unknown error';
-                                            toast({ title: 'Repost failed', description: msg, variant: 'destructive' });
-                                          });
-                                        }}
-                                      >
-                                        <Repeat2 className="w-3.5 h-3.5" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent className="text-xs">Repost / boost</TooltipContent>
-                                  </Tooltip>
-                                </>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="w-7 h-7"
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        if (!user) return;
+                                        publishEvent({
+                                          kind: 6,
+                                          content: '',
+                                          tags: [
+                                            ['e', post.eventId, '', 'mention'],
+                                            ['p', user.pubkey],
+                                          ],
+                                        }).then(() => {
+                                          toast({ title: 'Reposted!', description: 'Your note has been boosted on Nostr.' });
+                                        }).catch((error) => {
+                                          const msg = error instanceof Error ? error.message : 'Unknown error';
+                                          toast({ title: 'Repost failed', description: msg, variant: 'destructive' });
+                                        });
+                                      }}
+                                    >
+                                      <Repeat2 className="w-3.5 h-3.5" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="text-xs">Repost / boost</TooltipContent>
+                                </Tooltip>
                               )}
                             </div>
                           </div>
@@ -973,6 +1012,20 @@ export default function Dashboard() {
                   </Card>
                 );
               })}
+              {/* View all link */}
+              {relayAnalyticsPosts.length > 5 && (
+                <Link to="/analytics" className="block">
+                  <Card className="hover:shadow-md transition-all hover:border-primary/20 cursor-pointer group border-dashed">
+                    <CardContent className="py-3 px-4 flex items-center justify-center gap-2">
+                      <BarChart3 className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                      <p className="text-sm font-medium text-muted-foreground group-hover:text-primary transition-colors">
+                        View all {relayAnalyticsPosts.length} posts in Analytics
+                      </p>
+                      <ArrowRight className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
+                    </CardContent>
+                  </Card>
+                </Link>
+              )}
             </div>
           )}
         </div>
