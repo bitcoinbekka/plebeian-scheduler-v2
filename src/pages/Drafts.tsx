@@ -10,6 +10,7 @@ import {
   CalendarClock,
   Clock,
   Repeat2,
+  Megaphone,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -41,13 +42,19 @@ function getPostTitle(post: SchedulerPost): string {
 /** Get the icon for a post type */
 function getPostIcon(post: SchedulerPost) {
   if (post.postType === 'long') return Newspaper;
-  if (post.postType === 'promo') return ShoppingBag;
+  if (post.postType === 'promo') {
+    // Campaign = has an imported listing; regular promo = no listing
+    return post.importedListing ? Megaphone : ShoppingBag;
+  }
   return MessageSquare;
 }
 
 /** Get badge styling for a post type */
 function getPostTypeBadge(post: SchedulerPost) {
   if (post.postType === 'long') return { label: 'Long-form Article', shortLabel: 'Article', kind: 'kind 30023', color: 'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20' };
+  if (post.postType === 'promo' && post.importedListing) {
+    return { label: 'Campaign Promo', shortLabel: 'Campaign', kind: 'kind 1', color: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' };
+  }
   if (post.postType === 'promo') return { label: 'Promo Note', shortLabel: 'Promo', kind: 'kind 1', color: 'bg-primary/10 text-primary border-primary/20' };
   return { label: 'Short Note', shortLabel: 'Note', kind: 'kind 1', color: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20' };
 }
@@ -126,12 +133,14 @@ export default function Drafts() {
                     <div className={cn(
                       'w-10 h-10 rounded-lg flex items-center justify-center shrink-0',
                       post.postType === 'long' ? 'bg-violet-500/10' :
+                      post.postType === 'promo' && post.importedListing ? 'bg-amber-500/10' :
                       post.postType === 'promo' ? 'bg-primary/10' :
                       'bg-blue-500/10'
                     )}>
                       <PostIcon className={cn(
                         'w-5 h-5',
                         post.postType === 'long' ? 'text-violet-500' :
+                        post.postType === 'promo' && post.importedListing ? 'text-amber-500' :
                         post.postType === 'promo' ? 'text-primary' :
                         'text-blue-500'
                       )} />
